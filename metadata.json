@@ -1,0 +1,6 @@
+{
+  "name": "Operations Platform",
+  "description": "Mobile-first insight memory cards platform for process and lead tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
