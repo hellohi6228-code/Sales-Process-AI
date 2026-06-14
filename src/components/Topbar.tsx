@@ -2,11 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Settings, LogOut, User, Menu, CreditCard, Cpu } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Modal } from '../components/ui/Modal';
+import { supabase } from '../lib/SupabaseClient';
+import { useNavigate } from 'react-router-dom';
+import { useAppContext } from '../AppContext';
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const { session } = useAppContext();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -17,6 +22,11 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
 
   return (
     <>
@@ -60,8 +70,8 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                {isProfileOpen && (
                  <div className="absolute right-0 mt-2 w-56 rounded-xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-lg py-1 z-50 transform opacity-100 scale-100 transition-all origin-top-right">
                    <div className="px-4 py-2 border-b border-white/40 dark:border-white/10">
-                     <p className="text-sm font-medium text-neutral-900 dark:text-white">Admin User</p>
-                     <p className="text-xs text-neutral-500">admin@company.com</p>
+                     <p className="text-sm font-medium text-neutral-900 dark:text-white">User</p>
+                     <p className="text-xs text-neutral-500 truncate">{session?.user?.email || 'user@example.com'}</p>
                    </div>
                    <div className="py-1 border-b border-white/40 dark:border-white/10">
                      <button className="w-full text-left px-4 py-2 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex flex-col items-start gap-1">
@@ -86,7 +96,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                    <button className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center">
                      <Settings className="h-4 w-4 mr-2" /> Team
                    </button>
-                   <button className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center mb-1">
+                   <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center mb-1">
                      <LogOut className="h-4 w-4 mr-2" /> Sign out
                    </button>
                  </div>
