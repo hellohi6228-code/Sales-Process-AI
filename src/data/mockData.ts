@@ -9,8 +9,6 @@ export const EXAC_KPIS: KPI[] = [
 
 export const SALES_LEADS: Lead[] = [
   { id: 'L-101', company: 'Titan Aerospace', contact: 'Sarah Jenkins', status: 'Proposal', value: 850000, probability: 75, expectedClose: '2026-06-15', leadTimeRisk: 'High' },
-  { id: 'L-102', company: 'Nova Robotics', contact: 'David Chu', status: 'Qualified', value: 320000, probability: 60, expectedClose: '2026-06-22', leadTimeRisk: 'Low' },
-  { id: 'L-103', company: 'Apex Medical', contact: 'Maria Garcia', status: 'Contacted', value: 150000, probability: 30, expectedClose: '2026-07-10', leadTimeRisk: 'Medium' },
   { id: 'L-104', company: 'Quantum Motors', contact: 'James Wilson', status: 'Won', value: 1200000, probability: 100, expectedClose: '2026-06-01', leadTimeRisk: 'Low' },
   { id: 'L-105', company: 'Starlight Energy', contact: 'Emily Chen', status: 'Qualified', value: 540000, probability: 45, expectedClose: '2026-07-28', leadTimeRisk: 'Medium' },
 ];
@@ -25,8 +23,6 @@ export const MARKETING_CAMPAIGNS: Campaign[] = [
 export const PRODUCTION_JOBS: ProductionJob[] = [
   { id: 'J-8820', customer: 'Quantum Motors', partName: 'EV Battery Housings', status: 'In Progress', dueDate: '2026-06-18', completionPercentage: 65, machines: ['CNC-04', 'CNC-05'] },
   { id: 'J-8821', customer: 'Titan Aerospace', partName: 'Turbine Blades (Titanium)', status: 'Delayed', dueDate: '2026-06-12', completionPercentage: 40, machines: ['Milling-02'] },
-  { id: 'J-8822', customer: 'Apex Medical', partName: 'Surgical Instrument Handles', status: 'Quality Check', dueDate: '2026-06-08', completionPercentage: 95, machines: ['Lathe-01'] },
-  { id: 'J-8823', customer: 'Nova Robotics', partName: 'Actuator Casings', status: 'Scheduled', dueDate: '2026-06-25', completionPercentage: 0, machines: ['CNC-01', 'CNC-03'] },
 ];
 
 export const MARKET_INSIGHTS: MarketInsight[] = [
@@ -37,7 +33,6 @@ export const MARKET_INSIGHTS: MarketInsight[] = [
 
 export const MESSAGES: Message[] = [
   { id: 'M-1', sender: 'Production Desk (System)', preview: 'Material delay for Titan Aerospace (J-8821). Rescheduling recommended.', time: '10:45 AM', unread: true },
-  { id: 'M-2', sender: 'Sales Assistant', preview: 'Follow-up suggested for Nova Robotics based on email activity today.', time: '09:30 AM', unread: true },
   { id: 'M-3', sender: 'Sarah (Marketing)', preview: 'The new campaign copy is ready for review.', time: 'Yesterday', unread: false },
 ];
 

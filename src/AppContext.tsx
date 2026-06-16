@@ -3,14 +3,10 @@ import { supabase } from './lib/SupabaseClient';
 import { Session } from '@supabase/supabase-js';
 
 const initialProcessFolders = [
-  'Positioning', 'Lead', 'Qualifying', 'Discovery', 'Solution Design',
+  'Positioning', 'Audience', 'Qualifying', 'Discovery', 'Solution Design',
   'Business Case', 'Proposal', 'Closing', 'Objection Handling', 'Onboarding', 'Referral'
 ];
-const initialLeadFolders = [
-  'Precision Components Inc.',
-  'Apex Medical',
-  'Nova Robotics'
-];
+const initialLeadFolders: string[] = [];
 
 export const AppContext = createContext<any>(null);
 
@@ -29,6 +25,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [processLeads, setProcessLeads] = useState<Record<string, string[]>>({});
   const [leadSourceDocs, setLeadSourceDocs] = useState<Record<string, any[]>>({});
   const [processSourceDocs, setProcessSourceDocs] = useState<Record<string, any[]>>({});
+  const [documentStates, setDocumentStates] = useState<Record<string, { content: string, history: any[] }>>({});
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -59,7 +56,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       folderAccess, setFolderAccess,
       processLeads, setProcessLeads,
       leadSourceDocs, setLeadSourceDocs,
-      processSourceDocs, setProcessSourceDocs
+      processSourceDocs, setProcessSourceDocs,
+      documentStates, setDocumentStates
     }}>
       {children}
     </AppContext.Provider>
