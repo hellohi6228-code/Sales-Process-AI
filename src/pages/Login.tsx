@@ -48,7 +48,7 @@ export function Login() {
         provider: 'google',
         options: {
           skipBrowserRedirect: true,
-          scopes: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents',
+          scopes: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify',
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -144,4 +144,3 @@ export function Login() {
     </div>
   );
 }
-
