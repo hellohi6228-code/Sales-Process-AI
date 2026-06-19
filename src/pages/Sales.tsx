@@ -22,6 +22,7 @@ export function Sales() {
     setCustomCardsLead: setCustomCards,
     leadSourceDocs,
     setLeadSourceDocs,
+    reportGoogleError,
   } = useAppContext();
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
@@ -142,6 +143,7 @@ export function Sales() {
             }
           } catch (e) {
             console.error("Failed to sync to Google Drive:", e);
+            reportGoogleError(e, 'Failed to sync to Google Drive');
           }
         }
 
@@ -211,6 +213,7 @@ export function Sales() {
             }
           } catch (e) {
             console.error("Failed to sync to Google Drive:", e);
+            reportGoogleError(e, 'Failed to sync to Google Drive');
           }
         }
 
