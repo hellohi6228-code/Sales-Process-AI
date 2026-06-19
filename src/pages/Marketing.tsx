@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { supabase } from "../lib/SupabaseClient";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft,
@@ -19,40 +20,11 @@ import {
 
 const CARDS_BY_PROCESS: Record<string, any[]> = {};
 
-const openInNewTab = (url: string, name: string) => {
-  if (url.startsWith("data:")) {
-    if (url.startsWith("data:image")) {
-      const win = window.open("", "_blank");
-      if (!win) return;
-      win.document.write(
-        `<html style="margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#0e0e0e;"><head><title>${name}</title></head><body><img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;"/></body></html>`,
-      );
-      win.document.close();
-      return;
-    } else if (url.startsWith("data:application/pdf")) {
-      const win = window.open("", "_blank");
-      if (!win) return;
-      win.document.write(
-        `<html style="margin:0;height:100%;"><head><title>${name}</title></head><body style="margin:0;height:100%;"><embed src="${url}" width="100%" height="100%"></embed></body></html>`,
-      );
-      win.document.close();
-      return;
-    } else {
-      // For Word docs, Excel, CSV, text, etc. create a download link
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      return;
-    }
-  }
-  window.open(url, "_blank");
-};
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText } from "../lib/googleDrive";
 
 export function Marketing() {
   const {
+    session,
     processFolders,
     setProcessFolders,
     customCardsProcess: customCards,
@@ -78,39 +50,9 @@ export function Marketing() {
   const [attachedFiles, setAttachedFiles] = useState<FileData[]>([]);
   const [editingDoc, setEditingDoc] = useState<any>(null); // { name: string, url: string }
   const [isSendProposalModalOpen, setIsSendProposalModalOpen] = useState(false);
-  const [proposalEmail, setProposalEmail] = useState("");
   const [proposalStatus, setProposalStatus] = useState<string | null>(null);
   const [isClientActionModalOpen, setIsClientActionModalOpen] = useState(false);
   const [clientFeedback, setClientFeedback] = useState("");
-
-  const handleSendProposal = () => {
-    // Generate version proposed
-    const currentProposalCards = getActiveCards();
-    const versionNum = (customCards["version proposed"] || []).filter((c: any) => c.lead === selectedActiveLead).length + 1;
-    const now = new Date().toLocaleString();
-    const secureLinkId = Math.random().toString(36).substring(2, 10);
-    const reviewLink = `${window.location.origin}/review/${secureLinkId}`;
-    
-    const versionRecord = {
-      title: `Version ${versionNum}`,
-      text: `Sent to: ${proposalEmail} at ${now}. Cards: ${JSON.stringify(currentProposalCards)}`,
-      lead: selectedActiveLead,
-      versionNum,
-      date: now,
-      sender: "Sales Agent",
-      recipient: proposalEmail,
-      cards: currentProposalCards,
-      reviewLink,
-    };
-
-    setCustomCards((prev: Record<string, any[]>) => ({
-      ...prev,
-      ["version proposed"]: [...(prev["version proposed"] || []), versionRecord]
-    }));
-
-    setProposalStatus("Sent");
-    setIsSendProposalModalOpen(false);
-  };
 
   const handleClientFeedback = (type: 'reject' | 'accept') => {
     const activeVersionNum = (customCards["version proposed"] || []).filter(c => c.lead === selectedActiveLead).length;
@@ -133,11 +75,9 @@ export function Marketing() {
       const currentCards = (customCards["version proposed"] || []).filter((c: any) => c.lead === selectedActiveLead).pop()?.cards || getActiveCards();
       const signedRecord = {
         title: `Signed Proposal (v${activeVersionNum})`,
-        text: `Accepted by ${proposalEmail} on ${new Date().toLocaleString()}`,
+        text: `Accepted on ${new Date().toLocaleString()}`,
         lead: selectedActiveLead,
         cards: currentCards,
-        signerName: proposalEmail.split('@')[0],
-        signerEmail: proposalEmail,
         signingDate: new Date().toLocaleString(),
         versionRef: activeVersionNum,
         isReadOnly: true
@@ -339,43 +279,86 @@ export function Marketing() {
         };
       });
 
+      let proposalDoc: any = null;
       if (selectedFolder === "Proposal" && newCards.length > 0) {
         setProcessSourceDocs((prev: Record<string, any[]>) => {
           const existingDocs = prev[selectedFolder] || [];
           
           let version = 1;
           existingDocs.forEach((d: any) => {
-            if (d.name && d.name.startsWith("Proposal - Version ")) {
-               const v = parseInt(d.name.replace("Proposal - Version ", ""), 10);
+            if (d.name && d.name.startsWith("Proposal.v")) {
+               const v = parseInt(d.name.replace("Proposal.v", ""), 10);
                if (v >= version) version = v + 1;
             }
           });
 
           const proposalContent = newCards.map((c: any) => `${c.title}\n${c.text}`).join('\n\n');
-          const proposalDoc = {
-            name: `Proposal - Version ${version}.txt`,
+          proposalDoc = {
+            name: `Proposal.v${version}`,
             url: `data:text/plain;base64,` + btoa(unescape(encodeURIComponent(proposalContent))),
             lead: selectedActiveLead,
+            googleDocId: null as string | null,
           };
+          
+          return prev; // We will update after google drive sync
+        });
+      }
 
-          return {
-            ...prev,
-            [selectedFolder]: [...existingDocs, proposalDoc],
-          };
+      let finalDocs = attachedFiles.map((f) => ({
+        name: f.name,
+        url: f.url,
+        lead: selectedActiveLead,
+        googleDocId: null as string | null,
+      }));
+
+      const googleToken = localStorage.getItem('google_provider_token');
+      if (googleToken) {
+        try {
+          const folderId = await syncFolderStructure(selectedFolder, 'PROCESS');
+          
+          for (let i = 0; i < attachedFiles.length; i++) {
+            const f = attachedFiles[i];
+            if (f.url.startsWith("data:")) {
+              const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+              finalDocs[i].googleDocId = driveFile.id;
+            }
+          }
+
+          if (proposalDoc) {
+             const driveFile = await uploadBase64ToDrive(proposalDoc.name, proposalDoc.url, folderId);
+             proposalDoc.googleDocId = driveFile.id;
+             proposalDoc.url = `https://docs.google.com/document/d/${driveFile.id}/edit`;
+          }
+          
+          if (contextInput) {
+             const driveFile = await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, folderId);
+             finalDocs.push({
+               name: `${selectedFolder} Context Summary`,
+               url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+               lead: selectedActiveLead,
+               googleDocId: driveFile.id
+             } as any);
+          }
+        } catch (e) {
+          console.error("Failed to sync to Google Drive:", e);
+        }
+      }
+
+      if (proposalDoc) {
+        setProcessSourceDocs((prev: Record<string, any[]>) => {
+            const existingDocs = prev[selectedFolder] || [];
+            return {
+              ...prev,
+              [selectedFolder]: [...existingDocs, proposalDoc],
+            };
         });
       }
 
       if (attachedFiles.length > 0) {
         setProcessSourceDocs((prev: Record<string, any[]>) => {
           const existingDocs = prev[selectedFolder] || [];
-          const newDocs = attachedFiles.map((f) => ({
-            name: f.name,
-            url: f.url,
-            lead: selectedActiveLead,
-          }));
-          // Keep distinct files
           const merged = [...existingDocs];
-          for (const doc of newDocs) {
+          for (const doc of finalDocs) {
             if (!merged.find((d) => d.name === doc.name && d.url === doc.url)) {
               merged.push(doc);
             }
@@ -473,12 +456,15 @@ export function Marketing() {
                 >
                   Send to Client
                 </button>
-                {proposalStatus === "Sent" && (
+                {gmailConnected && (
                   <button
-                    onClick={() => setIsClientActionModalOpen(true)}
-                    className="px-4 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition text-sm font-bold text-neutral-700 dark:text-neutral-300"
+                    onClick={handleSyncReplies}
+                    className="px-4 h-10 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-full flex items-center justify-center shadow-sm hover:bg-emerald-100 transition text-sm font-bold gap-2"
                   >
-                    Simulate Client Review
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Sync Gmail Replies
                   </button>
                 )}
               </>
@@ -522,21 +508,31 @@ export function Marketing() {
 
                         {processSourceDocs[selectedFolder]?.map(
                           (doc: any, i: number) => (
-                            <a
-                              key={i}
-                              href={doc.url}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setEditingDoc(doc);
-                                setIsLeadsExpanded(false);
-                              }}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center gap-2"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0"></span>
-                              <span className="truncate">{doc.name}</span>
-                            </a>
+                            <div key={i} className="flex flex-col gap-1 w-full mt-2">
+                              <a
+                                href={doc.googleDocId ? `https://docs.google.com/document/d/${doc.googleDocId}/edit` : doc.url}
+                                onClick={(e) => {
+                                  if (!doc.googleDocId && doc.url.startsWith("data:text/html")) {
+                                    e.preventDefault();
+                                    setEditingDoc(doc);
+                                    setIsLeadsExpanded(false);
+                                  }
+                                }}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-between"
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0"></span>
+                                  <span className="truncate">{doc.name}</span>
+                                </div>
+                              </a>
+                              {doc.googleDocId && (
+                                <a href={`https://docs.google.com/document/d/${doc.googleDocId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[10px] uppercase font-bold text-sky-500 hover:underline pl-3.5">
+                                  Open in Docs ↗
+                                </a>
+                              )}
+                            </div>
                           ),
                         )}
 
@@ -731,75 +727,6 @@ export function Marketing() {
           <DocumentEditor key={editingDoc.name} doc={editingDoc} onClose={() => setEditingDoc(null)} />
         )}
       </div>
-
-        <Modal
-          isOpen={isSendProposalModalOpen}
-          onClose={() => setIsSendProposalModalOpen(false)}
-          title="Send Proposal"
-          className="sm:max-w-md"
-        >
-          <div className="space-y-4 pt-2">
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 mb-2">Recipient Email</label>
-              <input 
-                type="email"
-                className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" 
-                value={proposalEmail}
-                onChange={e => setProposalEmail(e.target.value)}
-              />
-            </div>
-            <button
-              onClick={handleSendProposal}
-              className="w-full py-3 mt-4 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow"
-            >
-              Send Proposal
-            </button>
-          </div>
-        </Modal>
-
-        <Modal
-          isOpen={isClientActionModalOpen}
-          onClose={() => setIsClientActionModalOpen(false)}
-          title="Simulate Client Action (Email/Review Link)"
-          className="sm:max-w-md"
-        >
-          <div className="space-y-4 pt-2">
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 rounded-xl text-sm mb-4">
-              <p className="font-semibold mb-1">Simulated Email Sent</p>
-              <p className="opacity-90">A secure review link was sent to {proposalEmail}.</p>
-              <p className="mt-2 text-xs font-mono break-all opacity-70 border-t border-blue-200/50 dark:border-blue-800 pt-2">
-                {(() => {
-                  const items = customCards["version proposed"] || [];
-                  const activeVersion = items.filter((c: any) => c.lead === selectedActiveLead).pop();
-                  return activeVersion ? activeVersion.reviewLink : "";
-                })()}
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-neutral-500 mb-2">Client Feedback (optional)</label>
-              <textarea 
-                className="w-full h-24 p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 resize-none" 
-                placeholder="E.g., Pricing is too high, please reconsider the timeline."
-                value={clientFeedback}
-                onChange={e => setClientFeedback(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-4">
-              <button
-                onClick={() => handleClientFeedback('reject')}
-                className="flex-1 py-3 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow"
-              >
-                Reject / Comment
-              </button>
-              <button
-                onClick={() => handleClientFeedback('accept')}
-                className="flex-1 py-3 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow"
-              >
-                Accept & Sign
-              </button>
-            </div>
-          </div>
-        </Modal>
 
         <Modal
           isOpen={isAddModalOpen}

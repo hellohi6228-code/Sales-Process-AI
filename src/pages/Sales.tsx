@@ -12,37 +12,7 @@ import {
 
 const LEAD_DATA: Record<string, any[]> = {};
 
-const openInNewTab = (url: string, name: string) => {
-  if (url.startsWith("data:")) {
-    if (url.startsWith("data:image")) {
-      const win = window.open("", "_blank");
-      if (!win) return;
-      win.document.write(
-        `<html style="margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#0e0e0e;"><head><title>${name}</title></head><body><img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;"/></body></html>`,
-      );
-      win.document.close();
-      return;
-    } else if (url.startsWith("data:application/pdf")) {
-      const win = window.open("", "_blank");
-      if (!win) return;
-      win.document.write(
-        `<html style="margin:0;height:100%;"><head><title>${name}</title></head><body style="margin:0;height:100%;"><embed src="${url}" width="100%" height="100%"></embed></body></html>`,
-      );
-      win.document.close();
-      return;
-    } else {
-      // For Word docs, Excel, CSV, text, etc. create a download link
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      return;
-    }
-  }
-  window.open(url, "_blank");
-};
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText } from "../lib/googleDrive";
 
 export function Sales() {
   const {
@@ -145,14 +115,50 @@ export function Sales() {
           [newLeadName]: data.cards,
         }));
 
-        if (attachedFiles.length > 0) {
-          setLeadSourceDocs((prev: Record<string, any[]>) => ({
-            ...prev,
-            [newLeadName]: attachedFiles.map((f) => ({
-              name: f.name,
-              url: f.url,
-            })),
-          }));
+        let finalDocs = attachedFiles.map((f) => ({
+          name: f.name,
+          url: f.url,
+          googleDocId: null as string | null,
+        }));
+
+        const googleToken = localStorage.getItem('google_provider_token');
+        if (googleToken) {
+          try {
+            const folderId = await syncFolderStructure(selectedLead || newLeadName, 'LEAD');
+            for (let i = 0; i < attachedFiles.length; i++) {
+              const f = attachedFiles[i];
+              if (f.url.startsWith("data:")) {
+                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                finalDocs[i].googleDocId = driveFile.id;
+              }
+            }
+            if (contextInput) {
+               const driveFile = await createGoogleDocFromText(`${selectedLead || newLeadName} Context Summary`, contextInput, folderId);
+               finalDocs.push({
+                 name: `${selectedLead || newLeadName} Context Summary`,
+                 url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                 googleDocId: driveFile.id
+               } as any);
+            }
+          } catch (e) {
+            console.error("Failed to sync to Google Drive:", e);
+          }
+        }
+
+        if (finalDocs.length > 0) {
+          setLeadSourceDocs((prev: Record<string, any[]>) => {
+            const existingDocs = prev[selectedLead || newLeadName] || [];
+            const merged = [...existingDocs];
+            for (const doc of finalDocs) {
+              if (!merged.find((d) => d.name === doc.name && d.url === doc.url)) {
+                merged.push(doc);
+              }
+            }
+            return {
+              ...prev,
+              [selectedLead || newLeadName]: merged,
+            };
+          });
         }
       } else {
         // Inside a lead folder
@@ -178,15 +184,41 @@ export function Sales() {
 
         setCardIndex(0);
 
-        if (attachedFiles.length > 0) {
+        let finalDocs = attachedFiles.map((f) => ({
+          name: f.name,
+          url: f.url,
+          googleDocId: null as string | null,
+        }));
+
+        const googleToken = localStorage.getItem('google_provider_token');
+        if (googleToken) {
+          try {
+            const folderId = await syncFolderStructure(selectedLead, 'LEAD');
+            for (let i = 0; i < attachedFiles.length; i++) {
+              const f = attachedFiles[i];
+              if (f.url.startsWith("data:")) {
+                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                finalDocs[i].googleDocId = driveFile.id;
+              }
+            }
+            if (contextInput) {
+               const driveFile = await createGoogleDocFromText(`Context Add (${new Date().toLocaleString()})`, contextInput, folderId);
+               finalDocs.push({
+                 name: `Context Add (${new Date().toLocaleString()})`,
+                 url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                 googleDocId: driveFile.id
+               } as any);
+            }
+          } catch (e) {
+            console.error("Failed to sync to Google Drive:", e);
+          }
+        }
+
+        if (finalDocs.length > 0) {
           setLeadSourceDocs((prev: Record<string, any[]>) => {
             const existingDocs = prev[selectedLead] || [];
-            const newDocs = attachedFiles.map((f) => ({
-              name: f.name,
-              url: f.url,
-            }));
             const merged = [...existingDocs];
-            for (const doc of newDocs) {
+            for (const doc of finalDocs) {
               if (
                 !merged.find((d) => d.name === doc.name && d.url === doc.url)
               ) {
@@ -277,20 +309,30 @@ export function Sales() {
 
                         {leadSourceDocs[selectedLead]?.map(
                           (doc: any, i: number) => (
-                            <a
-                              key={i}
-                              href={doc.url}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setEditingDoc(doc);
-                              }}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-2"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
-                              <span className="truncate">{doc.name}</span>
-                            </a>
+                            <div key={i} className="flex flex-col gap-1 w-full mt-2">
+                              <a
+                                href={doc.googleDocId ? `https://docs.google.com/document/d/${doc.googleDocId}/edit` : doc.url}
+                                onClick={(e) => {
+                                  if (!doc.googleDocId && doc.url.startsWith("data:text/html")) {
+                                    e.preventDefault();
+                                    setEditingDoc(doc);
+                                  }
+                                }}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center justify-between"
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
+                                  <span className="truncate">{doc.name}</span>
+                                </div>
+                              </a>
+                              {doc.googleDocId && (
+                                <a href={`https://docs.google.com/document/d/${doc.googleDocId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[10px] uppercase font-bold text-sky-500 hover:underline pl-3.5">
+                                  Open in Docs ↗
+                                </a>
+                              )}
+                            </div>
                           ),
                         )}
 

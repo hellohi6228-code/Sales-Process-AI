@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import * as mammoth from "mammoth";
+import { google } from "googleapis";
 
 async function startServer() {
   const app = express();
@@ -410,6 +411,68 @@ Write ONE concise sentence.`;
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  const userTokens: Record<string, any> = {};
+
+  function getOAuth2Client() {
+    return new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      `${process.env.APP_URL || "http://localhost:3000"}/api/auth/google/callback`
+    );
+  }
+
+  app.get("/api/auth/google/url", (req, res) => {
+    const oauth2Client = getOAuth2Client();
+    const url = oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: [
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents"
+      ],
+      prompt: "consent",
+    });
+    res.json({ url });
+  });
+
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { code } = req.query;
+    try {
+      const oauth2Client = getOAuth2Client();
+      const { tokens } = await oauth2Client.getToken(code as string);
+      oauth2Client.setCredentials(tokens);
+      const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
+      const userInfo = await oauth2.userinfo.get();
+      const email = userInfo.data.email;
+      
+      if (email) {
+        userTokens[email] = tokens;
+      }
+      
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', email: '${email}', token: '${tokens.access_token}' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            </script>
+            <p>Authentication successful. This window should close automatically.</p>
+          </body>
+        </html>
+      `);
+    } catch (error: any) {
+      console.error(error);
+      res.status(500).send("Authentication failed: " + error.message);
     }
   });
 

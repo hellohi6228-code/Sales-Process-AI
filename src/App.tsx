@@ -13,6 +13,7 @@ import { Login } from './pages/Login';
 import { SignUp } from './pages/SignUp';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { UpdatePassword } from './pages/UpdatePassword';
+import { Profile } from './pages/Profile';
 
 import { AppProvider, useAppContext } from './AppContext';
 
@@ -41,6 +42,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="lead" element={<Sales />} />
             <Route path="process" element={<Marketing />} />
+            <Route path="profile" element={<Profile />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

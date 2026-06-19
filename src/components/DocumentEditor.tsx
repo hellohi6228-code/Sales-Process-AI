@@ -91,7 +91,9 @@ export function DocumentEditor({ doc, onClose }: { doc: any; onClose: () => void
            </button>
          </div>
          
-         {doc.url && doc.url.startsWith("data:image") ? (
+         {doc.googleDocId ? (
+           <iframe src={`https://docs.google.com/document/d/${doc.googleDocId}/edit?rm=minimal`} className="w-full h-full min-h-[600px] rounded-xl" />
+         ) : doc.url && doc.url.startsWith("data:image") ? (
            <img src={doc.url} alt={doc.name} className="max-w-full rounded-xl shadow-sm" />
          ) : doc.url && doc.url.startsWith("data:application/pdf") ? (
            <embed src={doc.url} width="100%" height="800px" type="application/pdf" className="rounded-xl shadow-sm" />
@@ -129,37 +131,39 @@ export function DocumentEditor({ doc, onClose }: { doc: any; onClose: () => void
          )}
       </div>
 
-      <div className="w-full xl:w-[320px] bg-neutral-50 dark:bg-neutral-800/50 border-t xl:border-t-0 xl:border-l border-neutral-200 dark:border-neutral-800 p-6 flex flex-col shrink-0 min-h-[300px]">
-         <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-6">Edit History</h4>
-         
-         <div className="flex flex-col gap-4 flex-1 overflow-y-auto pr-2 min-h-0">
-            {history.map(item => (
-              <div key={item.id} className="bg-white dark:bg-neutral-800 p-4 rounded-xl shadow-sm border border-neutral-200/60 dark:border-neutral-700/60">
-                 <div className="flex justify-between items-start mb-2">
-                   <div className="flex items-center gap-2">
-                     <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700 shrink-0">
-                       {item.initials}
+      {!doc.googleDocId && (
+        <div className="w-full xl:w-[320px] bg-neutral-50 dark:bg-neutral-800/50 border-t xl:border-t-0 xl:border-l border-neutral-200 dark:border-neutral-800 p-6 flex flex-col shrink-0 min-h-[300px]">
+           <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-6">Edit History</h4>
+           
+           <div className="flex flex-col gap-4 flex-1 overflow-y-auto pr-2 min-h-0">
+              {history.map(item => (
+                <div key={item.id} className="bg-white dark:bg-neutral-800 p-4 rounded-xl shadow-sm border border-neutral-200/60 dark:border-neutral-700/60">
+                   <div className="flex justify-between items-start mb-2">
+                     <div className="flex items-center gap-2">
+                       <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700 shrink-0">
+                         {item.initials}
+                       </div>
+                       <div className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{item.name}</div>
                      </div>
-                     <div className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{item.name}</div>
+                     <div className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">{item.time}</div>
                    </div>
-                   <div className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">{item.time}</div>
+                   <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">
+                     {item.action}
+                   </p>
                  </div>
-                 <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">
-                   {item.action}
-                 </p>
-               </div>
-            ))}
-         </div>
-
-         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
-           <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 p-2 rounded-xl focus-within:ring-2 focus-within:ring-sky-500/50">
-             <input value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(); }} type="text" placeholder="Add note..." className="flex-1 w-full bg-transparent text-sm px-2 py-1 outline-none dark:text-white" />
-             <button onClick={handleAddComment} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">
-               Add
-             </button>
+              ))}
            </div>
-         </div>
-      </div>
+  
+           <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
+             <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 p-2 rounded-xl focus-within:ring-2 focus-within:ring-sky-500/50">
+               <input value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(); }} type="text" placeholder="Add note..." className="flex-1 w-full bg-transparent text-sm px-2 py-1 outline-none dark:text-white" />
+               <button onClick={handleAddComment} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">
+                 Add
+               </button>
+             </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,7 +90,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                        <p className="text-[10px] text-neutral-400 mt-0.5">45% of monthly quota</p>
                      </button>
                    </div>
-                   <button className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center mt-1">
+                   <button onClick={() => { setIsProfileOpen(false); navigate('/profile'); }} className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center mt-1">
                      <User className="h-4 w-4 mr-2" /> Profile
                    </button>
                    <button className="w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-white/50 dark:hover:bg-neutral-800/50 flex items-center">
