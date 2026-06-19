@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Outlet } from 'react-router-dom';
+import { ToastHost } from './ui/Toast';
 
 export function Layout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -22,7 +23,8 @@ export function Layout() {
           </div>
         </main>
       </div>
+
+      <ToastHost />
     </div>
   );
 }
-
