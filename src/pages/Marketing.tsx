@@ -35,6 +35,7 @@ export function Marketing() {
     setProcessLeads,
     processSourceDocs,
     setProcessSourceDocs,
+    reportGoogleError,
   } = useAppContext();
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
@@ -341,6 +342,7 @@ export function Marketing() {
           }
         } catch (e) {
           console.error("Failed to sync to Google Drive:", e);
+          reportGoogleError(e, 'Failed to sync to Google Drive');
         }
       }
 
