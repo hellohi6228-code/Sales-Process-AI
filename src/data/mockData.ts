@@ -134,3 +134,10 @@ export const DELIVERY_DATA = [
   { name: 'May', value: 93, target: 95 },
   { name: 'Jun', value: 96, target: 95 },
 ];
+export const TEAM_MEMBERS = [
+  { id: 'TM-1', name: 'Sarah Jenkins', role: 'Sales Lead', email: 'sarah.jenkins@example.com', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Sarah&backgroundColor=transparent' },
+  { id: 'TM-2', name: 'Michael Chen', role: 'Procurement', email: 'michael.chen@example.com', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Michael&backgroundColor=transparent' },
+  { id: 'TM-3', name: 'Alex Thompson', role: 'Engineering', email: 'alex.thompson@example.com', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Alex&backgroundColor=transparent' },
+  { id: 'TM-4', name: 'David Chu', role: 'Compliance', email: 'david.chu@example.com', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=David&backgroundColor=transparent' },
+  { id: 'TM-5', name: 'Elena Rodriguez', role: 'Marketing', email: 'elena.rodriguez@example.com', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Elena&backgroundColor=transparent' }
+];
