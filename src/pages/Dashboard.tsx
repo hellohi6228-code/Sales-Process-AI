@@ -7,6 +7,8 @@ import { cn } from '../lib/utils';
 import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
+import { Plus, Mail } from 'lucide-react';
+import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView } from '../lib/googleDrive';
 
 export function Dashboard() {
   const { processFolders, leadFolders, folderAccess, setFolderAccess } = useAppContext();
