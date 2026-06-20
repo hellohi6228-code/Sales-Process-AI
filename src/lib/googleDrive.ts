@@ -33,8 +33,6 @@ export function clearGoogleToken() {
 function isTokenExpired(): boolean {
   const obtainedAt = localStorage.getItem(TOKEN_OBTAINED_AT_KEY);
   if (!obtainedAt) {
-    // We don't know when it was issued — treat as expired to force a fresh check
-    // rather than risk silently using a stale token.
     return true;
   }
   return Date.now() - Number(obtainedAt) > TOKEN_TTL_MS;
@@ -280,6 +278,7 @@ export async function updateFileContent(fileId: string, content: string) {
     await checkDriveResponse(res, 'updating file content');
     return res.json();
 }
+
 export type DrivePermissionRole = 'reader' | 'writer' | 'commenter';
 
 /** Grants a person access to a Drive folder by email — this is what makes Drive
@@ -290,19 +289,19 @@ export async function shareFolderWithEmail(folderId: string, email: string, role
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ role, type: 'user', emailAddress: email }),
+    body: JSON.stringify({ role, type: 'user', emailAddress: email })
   });
   await checkDriveResponse(res, `sharing folder with ${email}`);
   return res.json();
 }
 
-/** Revokes a person's access to a Drive folder by email (used when dragging them off / removing access). */
+/** Revokes a person's access to a Drive folder by email (used when removing them from a folder). */
 export async function revokeFolderAccessForEmail(folderId: string, email: string) {
   const token = await ensureValidGoogleToken();
   const listRes = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress)`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}` }
   });
   await checkDriveResponse(listRes, 'listing folder permissions');
   const { permissions } = await listRes.json();
@@ -311,7 +310,7 @@ export async function revokeFolderAccessForEmail(folderId: string, email: string
 
   const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${match.id}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}` }
   });
   await checkDriveResponse(delRes, `revoking access for ${email}`);
 }
