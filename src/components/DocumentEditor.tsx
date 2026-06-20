@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useAppContext } from "../AppContext";
+import { getFileContent, updateFileContent } from "../lib/googleDrive";
 
 interface EditHistoryItem {
   id: string;
