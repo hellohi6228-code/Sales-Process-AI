@@ -280,3 +280,43 @@ export async function updateFileContent(fileId: string, content: string) {
     await checkDriveResponse(res, 'updating file content');
     return res.json();
 }
+export type DrivePermissionRole = 'reader' | 'writer' | 'commenter';
+
+/** Grants a person access to a Drive folder by email — this is what makes Drive
+ *  reflect the team-pool drag-and-drop in the app. */
+export async function shareFolderWithEmail(folderId: string, email: string, role: DrivePermissionRole = 'writer') {
+  const token = await ensureValidGoogleToken();
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions?sendNotificationEmail=true`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role, type: 'user', emailAddress: email }),
+  });
+  await checkDriveResponse(res, `sharing folder with ${email}`);
+  return res.json();
+}
+
+/** Revokes a person's access to a Drive folder by email (used when dragging them off / removing access). */
+export async function revokeFolderAccessForEmail(folderId: string, email: string) {
+  const token = await ensureValidGoogleToken();
+  const listRes = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress)`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await checkDriveResponse(listRes, 'listing folder permissions');
+  const { permissions } = await listRes.json();
+  const match = (permissions || []).find((p: any) => p.emailAddress?.toLowerCase() === email.toLowerCase());
+  if (!match) return;
+
+  const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${match.id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await checkDriveResponse(delRes, `revoking access for ${email}`);
+}
+
+/** Resolves the Drive folder ID for a folder shown in the Executive tab's Team Access panel. */
+export async function getFolderIdForView(view: 'Process' | 'Lead', folderName: string): Promise<string> {
+  return syncFolderStructure(folderName, view === 'Process' ? 'PROCESS' : 'LEAD');
+}
