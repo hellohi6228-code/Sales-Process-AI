@@ -43,6 +43,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [googleToken, setGoogleToken] = useState<string | null>(localStorage.getItem('google_provider_token'));
   const [notification, setNotification] = useState<Notification | null>(null);
 
+  // --- Team Pool (used by the Executive tab's drag-to-folder Drive sharing) ---
+  const [teamMembers, setTeamMembers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('team_members');
+      return saved ? JSON.parse(saved) : DEFAULT_TEAM_MEMBERS;
+    } catch {
+      return DEFAULT_TEAM_MEMBERS;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('team_members', JSON.stringify(teamMembers));
+  }, [teamMembers]);
+
+  const inviteTeamMember = (name: string, email: string, role = 'Invited') => {
+    setTeamMembers((prev: any[]) => {
+      if (prev.some(m => m.email?.toLowerCase() === email.toLowerCase())) return prev;
+      return [...prev, {
+        id: `TM-${Date.now()}`,
+        name,
+        email,
+        role,
+        avatar: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}&backgroundColor=transparent`,
+      }];
+    });
+  };
+
+  // --- Gmail proposal tracking (keyed by lead name) ---
+  const [proposalThreads, setProposalThreads] = useState<Record<string, any[]>>(() => {
+    try {
+      const saved = localStorage.getItem('proposal_threads');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('proposal_threads', JSON.stringify(proposalThreads));
+  }, [proposalThreads]);
+
+  const addProposalThread = (leadName: string, thread: any) => {
+    setProposalThreads((prev) => ({
+      ...prev,
+      [leadName]: [...(prev[leadName] || []), thread],
+    }));
+  };
+
   /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
   const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
     if (error instanceof GoogleDriveError) {
@@ -163,6 +211,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notification, setNotification,
       reportGoogleError,
       reconnectGoogle,
+      teamMembers, setTeamMembers, inviteTeamMember,
+      proposalThreads, setProposalThreads, addProposalThread,
     }}>
       {children}
     </AppContext.Provider>
