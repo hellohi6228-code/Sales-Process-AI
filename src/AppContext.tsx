@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from './lib/SupabaseClient';
 import { Session } from '@supabase/supabase-js';
 import { initializeDefaultProcessFolders, recordGoogleTokenObtained, GoogleDriveError } from './lib/googleDrive';
+import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
 
 const initialProcessFolders = [
   'Positioning', 'Audience', 'Qualifying', 'Discovery', 'Solution Design',
