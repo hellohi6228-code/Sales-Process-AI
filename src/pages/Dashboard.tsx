@@ -8,7 +8,7 @@ import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
 import { Plus, Mail } from 'lucide-react';
-import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView, getRootAppFolder } from '../lib/googleDrive';
+import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView } from '../lib/googleDrive';
 
 export function Dashboard() {
   const {
@@ -92,18 +92,9 @@ export function Dashboard() {
     if (!inviteEmail) return;
     setIsInviting(true);
     try {
+      // Just adds them to the team pool. No Drive access is granted here —
+      // access is only granted per-folder, via tap-to-assign or drag-and-drop below.
       inviteTeamMember(inviteName || inviteEmail, inviteEmail);
-
-      try {
-        const processRootId = await getRootAppFolder('PROCESS');
-        const leadRootId = await getRootAppFolder('LEAD');
-        await shareFolderWithEmail(processRootId, inviteEmail, 'writer');
-        await shareFolderWithEmail(leadRootId, inviteEmail, 'writer');
-      } catch (e) {
-        console.error('Failed to share Drive root folders on invite:', e);
-        reportGoogleError?.(e, `Invited ${inviteEmail}, but failed to grant Drive access`);
-      }
-
       setInviteName('');
       setInviteEmail('');
       setIsInviteModalOpen(false);
@@ -314,7 +305,7 @@ export function Dashboard() {
                        </h4>
                        <div className="flex-1 min-h-[40px] flex items-end">
                           {membersWithAccess.length > 0 ? (
-                            <div className="flex -space-x-2 overflow-hidden mt-auto">
+                            <div className="flex -space-x-2 mt-auto">
                               {membersWithAccess.map((member: any, idx: number) => {
                                  const key = `${folder}-${member?.id}`;
                                  const isOpen = activeMemberPopover === key;
@@ -396,7 +387,7 @@ export function Dashboard() {
             />
           </div>
           <p className="text-xs text-neutral-400">
-            They'll be added to your team pool and given edit access to all process and lead folders and documents in Google Drive.
+            They'll be added to your team pool only. Tap or drag them onto a specific folder afterward to grant edit access to just that folder.
           </p>
           <button
             disabled={isInviting || !inviteEmail}
