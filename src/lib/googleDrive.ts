@@ -148,6 +148,20 @@ export async function initializeDefaultProcessFolders(folders: string[]) {
   }
 }
 
+/**
+ * Lists files inside a Drive folder. Useful for reconciling what's actually in Drive
+ * with what the app has locally (e.g. after data loss or on a new device/browser).
+ */
+export async function listFilesInFolder(folderId: string) {
+  const token = await ensureValidGoogleToken();
+  const query = `'${folderId}' in parents and trashed=false`;
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink)&orderBy=createdTime`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  await checkDriveResponse(res, 'listing folder files');
+  const data = await res.json();
+  return (data.files || []) as { id: string; name: string; mimeType: string; webViewLink: string }[];
+}
 
 export async function uploadBase64ToDrive(filename: string, base64Url: string, folderId: string) {
   const token = await ensureValidGoogleToken();
@@ -178,7 +192,10 @@ export async function uploadBase64ToDrive(filename: string, base64Url: string, f
     `${base64Data}\r\n` +
     `--${boundary}--`;
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  // fields=...,webViewLink,mimeType lets callers build the correct link for the
+  // actual resulting file type (Docs editor link for Docs, Drive preview link for
+  // PDFs/images/videos/etc.) instead of guessing.
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink,name', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -209,7 +226,7 @@ export async function createGoogleDocFromText(filename: string, text: string, fo
     `${text}\r\n` +
     `--${boundary}--`;
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink,name', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -240,7 +257,7 @@ export async function uploadToDrive(filename: string, content: string, folderId:
     `${content}\n` +
     `--${boundary}--`;
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink,name', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
