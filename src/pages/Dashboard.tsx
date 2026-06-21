@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import { EXAC_KPIS, PIPELINE_DATA, HIT_RATE_DATA, UTILIZATION_DATA, DELIVERY_DATA, ACTION_ITEMS, TEAM_MEMBERS } from '../data/mockData';
+import { EXAC_KPIS, PIPELINE_DATA, HIT_RATE_DATA, UTILIZATION_DATA, DELIVERY_DATA, ACTION_ITEMS } from '../data/mockData';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CheckCircle2, Circle, ChevronDown, GripVertical, FolderOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -8,31 +8,107 @@ import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
 import { Plus, Mail } from 'lucide-react';
-import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView } from '../lib/googleDrive';
+import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView, getRootAppFolder } from '../lib/googleDrive';
 
 export function Dashboard() {
-  const { processFolders, leadFolders, folderAccess, setFolderAccess } = useAppContext();
+  const {
+    processFolders, leadFolders, folderAccess, setFolderAccess,
+    teamMembers, inviteTeamMember, reportGoogleError,
+  } = useAppContext();
   const [selectedKpi, setSelectedKpi] = useState<KPI | null>(null);
   const [activeGraph, setActiveGraph] = useState<'Qualified Leads' | 'Proposal Acceptance' | 'Closing' | 'Referral'>('Qualified Leads');
 
   const [folderView, setFolderView] = useState<'Process' | 'Lead'>('Process');
 
+  // Tap-to-assign (mobile fallback for native HTML5 drag-and-drop, which doesn't fire on touch)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  // Which member's name/email/remove popover is currently open (hover on desktop, tap on mobile)
+  const [activeMemberPopover, setActiveMemberPopover] = useState<string | null>(null);
+
+  // Invite teammate modal
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+
+  const assignMemberToFolder = async (memberId: string, folderName: string) => {
+    const member = teamMembers.find((m: any) => m.id === memberId);
+    if (!member) return;
+
+    setFolderAccess((prev: any) => {
+      const currentViewAccess = prev[folderView]?.[folderName] || [];
+      if (currentViewAccess.includes(memberId)) return prev;
+      return {
+        ...prev,
+        [folderView]: {
+          ...prev[folderView],
+          [folderName]: [...currentViewAccess, memberId],
+        },
+      };
+    });
+
+    if (member.email) {
+      try {
+        const folderId = await getFolderIdForView(folderView, folderName);
+        await shareFolderWithEmail(folderId, member.email, 'writer');
+      } catch (e) {
+        console.error('Failed to share Drive folder:', e);
+        reportGoogleError?.(e, `Failed to share "${folderName}" with ${member.email}`);
+      }
+    }
+  };
+
+  const removeMemberFromFolder = async (memberId: string, folderName: string) => {
+    const member = teamMembers.find((m: any) => m.id === memberId);
+
+    setFolderAccess((prev: any) => ({
+      ...prev,
+      [folderView]: {
+        ...prev[folderView],
+        [folderName]: (prev[folderView]?.[folderName] || []).filter((id: string) => id !== memberId),
+      },
+    }));
+
+    if (member?.email) {
+      try {
+        const folderId = await getFolderIdForView(folderView, folderName);
+        await revokeFolderAccessForEmail(folderId, member.email);
+      } catch (e) {
+        console.error('Failed to revoke Drive access:', e);
+        reportGoogleError?.(e, `Failed to revoke access for ${member.email}`);
+      }
+    }
+  };
+
   const handleDropToFolder = (e: React.DragEvent<HTMLDivElement>, folderName: string) => {
     e.preventDefault();
     const memberId = e.dataTransfer.getData('memberId');
     if (memberId) {
-      setFolderAccess(prev => {
-        const currentViewAccess = prev[folderView]?.[folderName] || [];
-        if (currentViewAccess.includes(memberId)) return prev;
-        
-        return {
-          ...prev,
-          [folderView]: {
-            ...prev[folderView],
-            [folderName]: [...currentViewAccess, memberId]
-          }
-        };
-      });
+      assignMemberToFolder(memberId, folderName);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail) return;
+    setIsInviting(true);
+    try {
+      inviteTeamMember(inviteName || inviteEmail, inviteEmail);
+
+      try {
+        const processRootId = await getRootAppFolder('PROCESS');
+        const leadRootId = await getRootAppFolder('LEAD');
+        await shareFolderWithEmail(processRootId, inviteEmail, 'writer');
+        await shareFolderWithEmail(leadRootId, inviteEmail, 'writer');
+      } catch (e) {
+        console.error('Failed to share Drive root folders on invite:', e);
+        reportGoogleError?.(e, `Invited ${inviteEmail}, but failed to grant Drive access`);
+      }
+
+      setInviteName('');
+      setInviteEmail('');
+      setIsInviteModalOpen(false);
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -163,26 +239,42 @@ export function Dashboard() {
           <CardContent className="px-0 flex-1 flex flex-col md:flex-row border-t border-black/5 mt-2">
             
             {/* Team Pool */}
-            <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-black/5 p-5 bg-white/30 hidden md:block">
-              <h3 className="font-semibold text-sm mb-4 flex items-center justify-between">
-                Team Pool
-                <span className="bg-white shadow-sm text-xs px-2 py-0.5 rounded-md border border-neutral-200">{TEAM_MEMBERS.length}</span>
+            <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-black/5 p-5 bg-white/30">
+              <h3 className="font-semibold text-sm mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  Team Pool
+                  <span className="bg-white shadow-sm text-xs px-2 py-0.5 rounded-md border border-neutral-200">{teamMembers.length}</span>
+                </span>
+                <button
+                  onClick={() => setIsInviteModalOpen(true)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-white border border-neutral-200 shadow-sm hover:bg-neutral-50 transition"
+                  aria-label="Invite teammate"
+                >
+                  <Plus className="w-4 h-4 text-neutral-600" />
+                </button>
               </h3>
+              <p className="text-[11px] text-neutral-400 mb-4">
+                Tap a teammate, then tap a folder to grant access. (Drag works on desktop too.)
+              </p>
               <div className="space-y-3 min-h-[300px] rounded-xl transition-colors">
-                {TEAM_MEMBERS.map(member => (
+                {teamMembers.map((member: any) => (
                   <div 
                      key={member.id} 
                      draggable 
-                     onDragStart={(e) => e.dataTransfer.setData('memberId', member.id)} 
-                     className="bg-white/80 border border-white/60 p-3.5 rounded-xl shadow-sm backdrop-blur-md cursor-grab active:cursor-grabbing hover:bg-white transition-all group relative overflow-hidden text-left"
+                     onDragStart={(e) => e.dataTransfer.setData('memberId', member.id)}
+                     onClick={() => setSelectedMemberId((prev) => (prev === member.id ? null : member.id))}
+                     className={cn(
+                       "bg-white/80 border p-3.5 rounded-xl shadow-sm backdrop-blur-md cursor-grab active:cursor-grabbing hover:bg-white transition-all group relative overflow-hidden text-left",
+                       selectedMemberId === member.id ? "border-sky-400 ring-2 ring-sky-300" : "border-white/60"
+                     )}
                   >
-                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-200 group-hover:bg-sky-400 transition-colors" />
+                     <div className={cn("absolute left-0 top-0 bottom-0 w-1 transition-colors", selectedMemberId === member.id ? "bg-sky-400" : "bg-sky-200 group-hover:bg-sky-400")} />
                      <div className="flex gap-2.5 items-center pl-2">
                        <GripVertical className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                        <img src={member.avatar} alt={member.name} className="w-8 h-8 rounded-full border border-neutral-200 bg-neutral-50" />
                        <div className="flex-1 min-w-0">
                          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{member.name}</p>
-                         <p className="text-xs text-neutral-500 truncate">{member.role}</p>
+                         <p className="text-xs text-neutral-500 truncate">{member.email || member.role}</p>
                        </div>
                      </div>
                   </div>
@@ -195,13 +287,19 @@ export function Dashboard() {
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-max content-start">
                 {(folderView === 'Process' ? processFolders : leadFolders).map((folder: string) => {
                   const membersWithAccess = (folderAccess[folderView]?.[folder] || []).map(
-                    (id: string) => TEAM_MEMBERS.find(m => m.id === id)
+                    (id: string) => teamMembers.find((m: any) => m.id === id)
                   ).filter(Boolean);
 
                   return (
                     <div 
                       key={folder} 
                       className="bg-white/40 dark:bg-neutral-800/40 rounded-2xl p-4 border border-white/40 dark:border-neutral-700 flex flex-col transition-colors min-h-[120px]"
+                      onClick={() => {
+                        if (selectedMemberId) {
+                          assignMemberToFolder(selectedMemberId, folder);
+                          setSelectedMemberId(null);
+                        }
+                      }}
                       onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-white/70', 'dark:bg-neutral-800/70', 'border-sky-300'); }}
                       onDragLeave={(e) => e.currentTarget.classList.remove('bg-white/70', 'dark:bg-neutral-800/70', 'border-sky-300')}
                       onDrop={(e) => { 
@@ -218,31 +316,42 @@ export function Dashboard() {
                           {membersWithAccess.length > 0 ? (
                             <div className="flex -space-x-2 overflow-hidden mt-auto">
                               {membersWithAccess.map((member: any, idx: number) => {
-                                 const handleRemove = (e: React.MouseEvent | React.TouchEvent) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setFolderAccess((prev: any) => ({
-                                      ...prev,
-                                      [folderView]: {
-                                        ...prev[folderView],
-                                        [folder]: prev[folderView][folder].filter((id: string) => id !== member?.id)
-                                      }
-                                    }));
-                                 };
+                                 const key = `${folder}-${member?.id}`;
+                                 const isOpen = activeMemberPopover === key;
 
                                  return (
-                                   <div 
-                                     key={idx} 
-                                     className="relative group cursor-pointer"
-                                     onContextMenu={handleRemove}
-                                   >
-                                     <img src={member?.avatar} alt={member?.name} className="inline-block w-8 h-8 rounded-full border-2 border-white dark:border-neutral-900 bg-white/50" title={member?.name} />
-                                     <div 
-                                        className="absolute -top-1 -right-1 bg-red-500 rounded-full w-3 h-3 hidden group-hover:flex items-center justify-center text-[8px] text-white cursor-pointer"
-                                        onClick={handleRemove}
-                                     >
-                                       ✕
-                                     </div>
+                                   <div key={idx} className="relative">
+                                     <img
+                                       src={member?.avatar}
+                                       alt={member?.name}
+                                       onMouseEnter={() => setActiveMemberPopover(key)}
+                                       onMouseLeave={() => setActiveMemberPopover((prev) => (prev === key ? null : prev))}
+                                       onClick={(e) => {
+                                         e.preventDefault();
+                                         e.stopPropagation();
+                                         setActiveMemberPopover((prev) => (prev === key ? null : key));
+                                       }}
+                                       className="inline-block w-8 h-8 rounded-full border-2 border-white dark:border-neutral-900 bg-white/50 cursor-pointer"
+                                     />
+                                     {isOpen && (
+                                       <div
+                                         className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg p-3 z-50 text-left"
+                                         onClick={(e) => e.stopPropagation()}
+                                       >
+                                         <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">{member?.name}</p>
+                                         <p className="text-[11px] text-neutral-500 truncate mb-2">{member?.email}</p>
+                                         <button
+                                           onClick={(e) => {
+                                             e.stopPropagation();
+                                             removeMemberFromFolder(member?.id, folder);
+                                             setActiveMemberPopover(null);
+                                           }}
+                                           className="w-full text-[11px] font-bold text-red-500 hover:text-red-600 border border-red-200 hover:bg-red-50 rounded-lg py-1.5 transition"
+                                         >
+                                           Remove access
+                                         </button>
+                                       </div>
+                                     )}
                                    </div>
                                  );
                                })}
@@ -259,6 +368,45 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Modal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        title="Invite Teammate"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-2">Name</label>
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Jane Doe"
+              className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-2">Gmail address</label>
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="jane@gmail.com"
+              className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
+            />
+          </div>
+          <p className="text-xs text-neutral-400">
+            They'll be added to your team pool and given edit access to all process and lead folders and documents in Google Drive.
+          </p>
+          <button
+            disabled={isInviting || !inviteEmail}
+            onClick={handleInvite}
+            className="w-full py-3 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow disabled:opacity-50"
+          >
+            {isInviting ? 'Inviting...' : 'Invite'}
+          </button>
+        </div>
+      </Modal>
 
       <Modal 
         isOpen={!!selectedKpi} 
@@ -323,4 +471,3 @@ export function Dashboard() {
     </div>
   );
 }
-
