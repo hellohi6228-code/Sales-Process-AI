@@ -44,10 +44,10 @@ export function Login() {
 
   const handleOAuthLogin = async (provider: 'google') => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          skipBrowserRedirect: true,
+          redirectTo: window.location.origin,
           scopes: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify',
           queryParams: {
             access_type: 'offline',
@@ -56,9 +56,6 @@ export function Login() {
         }
       });
       if (error) setError(error.message);
-      if (data?.url) {
-        window.open(data.url, 'oauth_popup', 'width=600,height=700');
-      }
     } catch (err: any) {
       setError(err.message || 'An error occurred during login');
     }
