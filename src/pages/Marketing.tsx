@@ -47,7 +47,7 @@ export function Marketing() {
   const [selectedActiveLead, setSelectedActiveLead] = useState<string | null>(
     null,
   );
-  const [isLeadsExpanded, setIsLeadsExpanded] = useState(true);
+  const [isLeadsExpanded, setIsLeadsExpanded] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<FileData[]>([]);
   const [editingDoc, setEditingDoc] = useState<any>(null); // { name: string, url: string }
   const [isSendProposalModalOpen, setIsSendProposalModalOpen] = useState(false);
@@ -484,10 +484,18 @@ export function Marketing() {
           {!editingDoc ? (
             <>
           {/* Left Column */}
-          <div className="absolute left-0 top-0 lg:static lg:flex-1 z-20 flex flex-col items-start w-auto">
+          <div
+            className={cn(
+              "absolute left-0 top-0 lg:static lg:flex-1 z-20 flex-col items-start w-auto",
+              isLeadsExpanded ? "hidden lg:flex" : "flex",
+            )}
+          >
             <div className="w-full relative">
               <button
-                onClick={() => setIsContextExpanded(!isContextExpanded)}
+                onClick={() => {
+                  setIsContextExpanded((prev) => !prev);
+                  setIsLeadsExpanded(false);
+                }}
                 className="bg-white/60 dark:bg-neutral-800/60 border border-neutral-200/50 dark:border-neutral-700/50 p-3 lg:px-4 lg:py-2 rounded-2xl flex items-center gap-2 text-sm font-bold text-neutral-700 dark:text-neutral-300 shadow-sm backdrop-blur-md transition-all hover:bg-white dark:hover:bg-neutral-700"
               >
                 <FileText className="w-5 h-5 lg:w-4 lg:h-4" /> <span className="hidden lg:inline">Context Summary</span>
@@ -551,7 +559,12 @@ export function Marketing() {
           </div>
 
           {/* Center Column */}
-              <div className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[400px] shrink-0 flex flex-col items-center justify-start relative z-10 px-2 lg:px-4 mx-auto">
+              <div
+                className={cn(
+                  "w-full max-w-[320px] sm:max-w-[360px] md:max-w-[400px] shrink-0 flex-col items-center justify-start relative z-10 px-2 lg:px-4 mx-auto",
+                  (isContextExpanded || isLeadsExpanded) ? "hidden lg:flex" : "flex",
+                )}
+              >
                 {cards.length > 0 ? (
                   <div className="relative flex flex-col w-full items-center">
                 <div className="h-[36px] flex items-center justify-center text-sm font-bold text-neutral-500 mb-2">
@@ -627,11 +640,19 @@ export function Marketing() {
             </div>
 
             {/* Right Column */}
-            <div className="absolute right-0 top-0 lg:static lg:flex-1 z-20 flex flex-col items-end w-auto">
+            <div
+              className={cn(
+                "absolute right-0 top-0 lg:static lg:flex-1 z-20 flex-col items-end w-auto",
+                isContextExpanded ? "hidden lg:flex" : "flex",
+              )}
+            >
               {selectedFolder !== "Positioning" && (
                 <div className="relative inline-block text-right w-full">
                   <button
-                    onClick={() => setIsLeadsExpanded(!isLeadsExpanded)}
+                    onClick={() => {
+                      setIsLeadsExpanded((prev) => !prev);
+                      setIsContextExpanded(false);
+                    }}
                     className="bg-white/60 dark:bg-neutral-800/60 border border-neutral-200/50 dark:border-neutral-700/50 p-3 lg:px-4 lg:py-2 rounded-2xl inline-flex items-center gap-2 text-sm font-bold text-neutral-700 dark:text-neutral-300 shadow-sm backdrop-blur-md transition-all hover:bg-white dark:hover:bg-neutral-700 float-right"
                   >
                     <FolderOpen className="w-5 h-5 lg:w-4 lg:h-4" /> <span className="hidden lg:inline">Lead</span>
