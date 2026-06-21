@@ -33,8 +33,11 @@ export function Sales() {
   const [attachedFiles, setAttachedFiles] = useState<FileData[]>([]);
   const [editingDoc, setEditingDoc] = useState<any>(null); // { name: string, url: string }
 
+  const hasAutoSelected = React.useRef(false);
+
   React.useEffect(() => {
-    if (leadsList.length === 1 && !selectedLead) {
+    if (leadsList.length === 1 && !selectedLead && !hasAutoSelected.current) {
+      hasAutoSelected.current = true;
       setSelectedLead(leadsList[0]);
     }
   }, [leadsList, selectedLead]);
