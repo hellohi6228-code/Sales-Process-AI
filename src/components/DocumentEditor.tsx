@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
-import { X } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { X, Cloud, CloudOff, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { useAppContext } from "../AppContext";
-import { getFileContent, updateFileContent } from "../lib/googleDrive";
+import { getActiveProvider, getProviderByType, SyncStatus, ProviderType } from "../lib/storage";
+import { GoogleDriveError } from "../lib/googleDrive";
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface EditHistoryItem {
   id: string;
@@ -11,160 +14,383 @@ interface EditHistoryItem {
   action: string;
 }
 
-export function DocumentEditor({ doc, onClose }: { doc: any; onClose: () => void; key?: string | number }) {
-  const { documentStates, setDocumentStates } = useAppContext();
-  
+interface DocumentEditorProps {
+  doc: any;
+  onClose: () => void;
+  /** Called when this doc is first created/linked to a remote ID */
+  onRemoteIdCreated?: (remoteId: string, provider: ProviderType, webUrl?: string) => void;
+  /** Folder ID on the storage provider to create the doc in (if it doesn't exist yet) */
+  remoteFolderId?: string;
+}
+
+// ─── Sync status badge ─────────────────────────────────────────────────────────
+
+function SyncBadge({ status, providerLabel, onRetry }: {
+  status: SyncStatus;
+  providerLabel: string;
+  onRetry?: () => void;
+}) {
+  const base = "inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all";
+
+  if (status === 'not_connected') return (
+    <span className={`${base} bg-neutral-100 dark:bg-neutral-800 text-neutral-500`}>
+      <CloudOff className="w-3.5 h-3.5" /> Not connected
+    </span>
+  );
+
+  if (status === 'loading') return (
+    <span className={`${base} bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400`}>
+      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading from {providerLabel}…
+    </span>
+  );
+
+  if (status === 'saving') return (
+    <span className={`${base} bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400`}>
+      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving to {providerLabel}…
+    </span>
+  );
+
+  if (status === 'synced') return (
+    <span className={`${base} bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400`}>
+      <CheckCircle2 className="w-3.5 h-3.5" /> Synced to {providerLabel}
+    </span>
+  );
+
+  if (status === 'error') return (
+    <button
+      onClick={onRetry}
+      className={`${base} bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 cursor-pointer`}
+    >
+      <AlertTriangle className="w-3.5 h-3.5" /> Sync failed — retry
+    </button>
+  );
+
+  // idle
+  return (
+    <span className={`${base} bg-neutral-100 dark:bg-neutral-800 text-neutral-400`}>
+      <Cloud className="w-3.5 h-3.5" /> {providerLabel}
+    </span>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
+export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId }: DocumentEditorProps) {
+  const { documentStates, setDocumentStates, reportGoogleError, reconnectGoogle } = useAppContext();
+
+  // Determine which storage provider to use.
+  // If the doc already has a known provider, use that; otherwise use the active one.
+  const provider = doc.provider
+    ? getProviderByType(doc.provider as ProviderType)
+    : getActiveProvider();
+
+  // ── State ──────────────────────────────────────────────────────────────────
+
   const docState = documentStates[doc.name];
 
-  const docOriginalContent = (() => {
+  const defaultContent = (() => {
     if (doc.url && doc.url.startsWith("data:text")) {
-      return atob(doc.url.split(",")[1]);
+      try { return atob(doc.url.split(",")[1]); } catch { return ""; }
     }
-    return "Project Beta is a project that aims to improve our overall performance as a company. It will be implemented in three phases:\n\n1. We will focus on increasing our market share in the current markets.\n2. We will expand into new markets.\n3. We will focus on developing new products and services.\n\nThe plan for this quarter is to review the project's progress and identify any risks or issues. In the following weeks, we'll start by gathering feedback from stakeholders on the project's direction. Once we have spoken with our stakeholders, we can build consensus around the project's goals and objectives.\n\nAs the project progresses, we'll identify any changes or updates to the project's scope and develop a plan for how to communicate with stakeholders about the project.";
+    return "";
   })();
 
-  const [content, setContent] = useState(() => {
-    return docState ? docState.content : docOriginalContent;
-  });
+  const [content, setContent] = useState<string>(() => docState?.content ?? defaultContent);
+  const [history, setHistory] = useState<EditHistoryItem[]>(() => docState?.history ?? [
+    { id: "1", initials: "SJ", name: "Susan Johnson", time: "Initial Create", action: "Uploaded document." }
+  ]);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    provider.isConnected() ? 'idle' : 'not_connected'
+  );
+  const [commentInput, setCommentInput] = useState("");
+  // Remote ID might be pre-loaded from doc, or assigned after first save
+  const [remoteId, setRemoteId] = useState<string | null>(doc.googleDocId ?? doc.remoteId ?? null);
 
-  const [history, setHistory] = useState<EditHistoryItem[]>(() => {
-    return docState ? docState.history : [
-      {
-        id: "1",
-        initials: "SJ",
-        name: "Susan Johnson",
-        time: "Initial Create",
-        action: "Uploaded document."
-      }
-    ];
-  });
-  
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedContentRef = useRef<string>(content);
+
+  // ── Load from cloud on mount if we have a remote ID ───────────────────────
+
+  useEffect(() => {
+    if (!remoteId || !provider.isConnected()) return;
+
+    setSyncStatus('loading');
+    provider.readDoc(remoteId)
+      .then((remoteContent) => {
+        // Only override local content if local is still the default (i.e. not edited)
+        if (content === defaultContent) {
+          setContent(remoteContent);
+          lastSavedContentRef.current = remoteContent;
+        }
+        setSyncStatus('synced');
+      })
+      .catch((err) => {
+        console.error("Failed to load from cloud:", err);
+        setSyncStatus('error');
+        reportGoogleError?.(err, `Failed to load "${doc.name}" from ${provider.label}`);
+      });
+    // Only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Persist state to context ───────────────────────────────────────────────
+
   useEffect(() => {
     setDocumentStates((prev: any) => ({
       ...prev,
-      [doc.name]: { content, history }
+      [doc.name]: { content, history },
     }));
   }, [content, history, doc.name, setDocumentStates]);
 
-  const computeDiffLabel = (oldStr: string, newStr: string) => {
+  // ── Auto-save to cloud (debounced 2 s after last keystroke) ───────────────
+
+  const syncToCloud = useCallback(async (textToSave: string) => {
+    if (!provider.isConnected()) {
+      setSyncStatus('not_connected');
+      return;
+    }
+    if (textToSave === lastSavedContentRef.current) return;
+
+    setSyncStatus('saving');
+    try {
+      if (remoteId) {
+        await provider.updateDoc(remoteId, textToSave);
+      } else if (remoteFolderId) {
+        // First save — create the doc on the provider
+        const remote = await provider.createDoc(doc.name, textToSave, remoteFolderId);
+        setRemoteId(remote.id);
+        onRemoteIdCreated?.(remote.id, provider.type, remote.webUrl);
+      }
+      lastSavedContentRef.current = textToSave;
+      setSyncStatus('synced');
+    } catch (err) {
+      console.error("Cloud sync failed:", err);
+      setSyncStatus('error');
+      if (err instanceof GoogleDriveError &&
+        (err.code === 'GOOGLE_TOKEN_EXPIRED' || err.code === 'GOOGLE_NOT_CONNECTED')) {
+        reportGoogleError?.(err, `Sync failed for "${doc.name}"`);
+      }
+    }
+  }, [provider, remoteId, remoteFolderId, doc.name, onRemoteIdCreated, reportGoogleError]);
+
+  const scheduleSync = useCallback((text: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => syncToCloud(text), 2000);
+  }, [syncToCloud]);
+
+  // Cleanup timer on unmount
+  useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
+
+  // ── Edit diff helper ───────────────────────────────────────────────────────
+
+  const computeDiffLabel = (oldStr: string, newStr: string): string | null => {
     let start = 0;
     while (start < oldStr.length && start < newStr.length && oldStr[start] === newStr[start]) start++;
     let oldEnd = oldStr.length - 1;
     let newEnd = newStr.length - 1;
-    while (oldEnd >= start && newEnd >= start && oldStr[oldEnd] === newStr[newEnd]) {
-      oldEnd--;
-      newEnd--;
-    }
-    const removedInfo = oldStr.substring(start, oldEnd + 1);
-    const addedInfo = newStr.substring(start, newEnd + 1);
-    const truncate = (s: string) => s.length > 20 ? s.substring(0, 20) + '...' : s;
-    
-    if (addedInfo.length === 0 && removedInfo.length === 0) return null;
-    if (removedInfo && addedInfo) return `Replaced "${truncate(removedInfo)}" with "${truncate(addedInfo)}"`;
-    if (removedInfo) return `Deleted "${truncate(removedInfo)}"`;
-    if (addedInfo) return `Added "${truncate(addedInfo)}"`;
-    return "Edited document content.";
+    while (oldEnd >= start && newEnd >= start && oldStr[oldEnd] === newStr[newEnd]) { oldEnd--; newEnd--; }
+    const removed = oldStr.substring(start, oldEnd + 1);
+    const added = newStr.substring(start, newEnd + 1);
+    const trunc = (s: string) => s.length > 20 ? s.substring(0, 20) + "…" : s;
+    if (!added && !removed) return null;
+    if (removed && added) return `Replaced "${trunc(removed)}" with "${trunc(added)}"`;
+    if (removed) return `Deleted "${trunc(removed)}"`;
+    if (added) return `Added "${trunc(added)}"`;
+    return null;
   };
 
-  const [commentInput, setCommentInput] = useState("");
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value;
+    const diffAction = computeDiffLabel(content, newContent);
+
+    if (diffAction) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setHistory((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.name === "You" && last.time === timeStr && last.action === "Edited text…") return prev;
+        if (last?.name === "You" && last.time === timeStr && diffAction.startsWith("Added")) {
+          return [...prev.slice(0, -1), { ...last, action: "Edited text…" }];
+        }
+        return [...prev, { id: Math.random().toString(), initials: "Y", name: "You", time: timeStr, action: diffAction }];
+      });
+    }
+
+    setContent(newContent);
+    setSyncStatus('idle');
+    scheduleSync(newContent);
+  };
+
+  const handleManualSave = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    syncToCloud(content);
+  };
 
   const handleAddComment = () => {
     if (!commentInput.trim()) return;
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setHistory(prev => [...prev, {
-      id: Math.random().toString(),
-      initials: "Y",
-      name: "You",
-      time: timeStr,
-      action: `Added note: "${commentInput}"`
-    }]);
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setHistory((prev) => [
+      ...prev,
+      { id: Math.random().toString(), initials: "Y", name: "You", time: timeStr, action: `Note: "${commentInput}"` },
+    ]);
     setCommentInput("");
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex-1 lg:flex-[3] flex flex-col xl:flex-row w-full bg-white dark:bg-neutral-900 rounded-[24px] shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden relative min-h-[600px] lg:max-h-[800px] ml-0 xl:ml-6">
-      <div className="flex-1 overflow-y-auto p-8 lg:p-12">
-         <div className="flex items-center justify-between mb-8 border-b border-neutral-200 dark:border-neutral-800 pb-4">
-           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{doc.name}</h1>
-           <button onClick={onClose} className="p-2 text-neutral-400 hover:text-neutral-600 transition bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 rounded-full shrink-0 ml-4">
-             <X className="w-5 h-5" />
-           </button>
-         </div>
-         
-         {doc.googleDocId ? (
-           <iframe src={`https://docs.google.com/document/d/${doc.googleDocId}/edit?rm=minimal`} className="w-full h-full min-h-[600px] rounded-xl" />
-         ) : doc.url && doc.url.startsWith("data:image") ? (
-           <img src={doc.url} alt={doc.name} className="max-w-full rounded-xl shadow-sm" />
-         ) : doc.url && doc.url.startsWith("data:application/pdf") ? (
-           <embed src={doc.url} width="100%" height="800px" type="application/pdf" className="rounded-xl shadow-sm" />
-         ) : (
-           <textarea 
-            value={content}
-            onChange={(e) => {
-              const newContent = e.target.value;
-              const diffAction = computeDiffLabel(content, newContent);
-              
-              if (diffAction) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                setHistory(prev => {
-                  const last = prev[prev.length - 1];
-                  // Coalesce edits within the same minute if they are simple additions
-                  if (last && last.name === "You" && last.time === timeStr && last.action.startsWith("Added") && diffAction.startsWith("Added")) {
-                    return [...prev.slice(0, -1), { ...last, action: `Edited text...` }];
-                  } else if (last && last.name === "You" && last.time === timeStr && last.action === "Edited text..." && diffAction.startsWith("Added")) {
-                    return prev; 
-                  }
-                  return [...prev, {
-                    id: Math.random().toString(),
-                    initials: "Y",
-                    name: "You",
-                    time: timeStr,
-                    action: diffAction
-                  }];
-                });
-              }
-              setContent(newContent);
-            }}
-            className="w-full h-full min-h-[600px] bg-transparent max-w-none prose prose-sm dark:prose-invert font-serif text-lg leading-relaxed text-neutral-800 dark:text-neutral-200 outline-none focus:ring-2 focus:ring-sky-500/50 p-4 rounded-xl transition whitespace-pre-wrap resize-none" 
-           />
-         )}
+
+      {/* ── Editor panel ── */}
+      <div className="flex-1 overflow-y-auto flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-neutral-100 dark:border-neutral-800 gap-4 flex-wrap">
+          <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100 truncate flex-1">
+            {doc.name}
+          </h1>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Sync status */}
+            <SyncBadge
+              status={syncStatus}
+              providerLabel={provider.label}
+              onRetry={handleManualSave}
+            />
+
+            {/* Reconnect button if not connected */}
+            {syncStatus === 'not_connected' && (
+              <button
+                onClick={reconnectGoogle}
+                className="inline-flex items-center gap-1.5 text-xs font-bold bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-3 py-1.5 rounded-full hover:opacity-90 transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Connect {provider.label}
+              </button>
+            )}
+
+            {/* Manual save */}
+            {provider.isConnected() && syncStatus !== 'saving' && syncStatus !== 'loading' && (
+              <button
+                onClick={handleManualSave}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-full transition"
+              >
+                <Cloud className="w-3.5 h-3.5" /> Save now
+              </button>
+            )}
+
+            {/* Open on provider (read-only external link) */}
+            {remoteId && provider.type === 'google_drive' && (
+              <a
+                href={`https://docs.google.com/document/d/${remoteId}/view`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] uppercase font-bold text-sky-500 hover:underline"
+              >
+                View in Docs ↗
+              </a>
+            )}
+
+            <button
+              onClick={onClose}
+              className="p-2 text-neutral-400 hover:text-neutral-600 transition bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 rounded-full shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Textarea */}
+        <div className="flex-1 p-8">
+          {doc.url?.startsWith("data:image") ? (
+            <img src={doc.url} alt={doc.name} className="max-w-full rounded-xl shadow-sm" />
+          ) : doc.url?.startsWith("data:application/pdf") ? (
+            <embed src={doc.url} width="100%" height="700px" type="application/pdf" className="rounded-xl shadow-sm" />
+          ) : (
+            <textarea
+              value={content}
+              onChange={handleContentChange}
+              className="w-full h-full min-h-[500px] bg-transparent font-serif text-lg leading-relaxed text-neutral-800 dark:text-neutral-200 outline-none focus:ring-2 focus:ring-sky-500/50 p-4 rounded-xl transition whitespace-pre-wrap resize-none"
+              placeholder="Start typing… changes sync automatically."
+            />
+          )}
+        </div>
       </div>
 
-      {!doc.googleDocId && (
-        <div className="w-full xl:w-[320px] bg-neutral-50 dark:bg-neutral-800/50 border-t xl:border-t-0 xl:border-l border-neutral-200 dark:border-neutral-800 p-6 flex flex-col shrink-0 min-h-[300px]">
-           <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-6">Edit History</h4>
-           
-           <div className="flex flex-col gap-4 flex-1 overflow-y-auto pr-2 min-h-0">
-              {history.map(item => (
-                <div key={item.id} className="bg-white dark:bg-neutral-800 p-4 rounded-xl shadow-sm border border-neutral-200/60 dark:border-neutral-700/60">
-                   <div className="flex justify-between items-start mb-2">
-                     <div className="flex items-center gap-2">
-                       <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700 shrink-0">
-                         {item.initials}
-                       </div>
-                       <div className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{item.name}</div>
-                     </div>
-                     <div className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">{item.time}</div>
-                   </div>
-                   <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">
-                     {item.action}
-                   </p>
-                 </div>
-              ))}
-           </div>
-  
-           <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
-             <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 p-2 rounded-xl focus-within:ring-2 focus-within:ring-sky-500/50">
-               <input value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(); }} type="text" placeholder="Add note..." className="flex-1 w-full bg-transparent text-sm px-2 py-1 outline-none dark:text-white" />
-               <button onClick={handleAddComment} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap">
-                 Add
-               </button>
-             </div>
-           </div>
+      {/* ── History panel ── */}
+      <div className="w-full xl:w-[300px] bg-neutral-50 dark:bg-neutral-800/50 border-t xl:border-t-0 xl:border-l border-neutral-200 dark:border-neutral-800 p-6 flex flex-col shrink-0 min-h-[300px]">
+        <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-4">
+          Edit History
+        </h4>
+
+        <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-1 min-h-0">
+          {history.map((item) => (
+            <div
+              key={item.id}
+              className="bg-white dark:bg-neutral-800 p-3 rounded-xl shadow-sm border border-neutral-200/60 dark:border-neutral-700/60"
+            >
+              <div className="flex justify-between items-start mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-sky-100 dark:bg-sky-900 flex items-center justify-center text-[10px] font-bold text-sky-700 dark:text-sky-300 shrink-0">
+                    {item.initials}
+                  </div>
+                  <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">
+                    {item.name}
+                  </span>
+                </div>
+                <span className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">
+                  {item.time}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed pl-8">
+                {item.action}
+              </p>
+            </div>
+          ))}
         </div>
-      )}
+
+        {/* Comment input */}
+        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
+          <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 p-2 rounded-xl focus-within:ring-2 focus-within:ring-sky-500/50">
+            <input
+              value={commentInput}
+              onChange={(e) => setCommentInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddComment(); }}
+              type="text"
+              placeholder="Add note…"
+              className="flex-1 bg-transparent text-sm px-2 py-1 outline-none dark:text-white"
+            />
+            <button
+              onClick={handleAddComment}
+              className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* Future providers hint */}
+        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
+          <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider mb-2">Sync to</p>
+          <div className="flex flex-col gap-1.5">
+            {[
+              { label: 'Google Drive', connected: getProviderByType('google_drive').isConnected(), icon: '📄' },
+              { label: 'SharePoint', connected: false, icon: '🔷', soon: true },
+              { label: 'AWS S3', connected: false, icon: '🟠', soon: true },
+            ].map((p) => (
+              <div key={p.label} className="flex items-center gap-2 text-xs">
+                <span>{p.icon}</span>
+                <span className={p.connected ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-neutral-400'}>
+                  {p.label}
+                </span>
+                {p.connected && <CheckCircle2 className="w-3 h-3 text-emerald-500 ml-auto" />}
+                {p.soon && <span className="ml-auto text-[10px] bg-neutral-100 dark:bg-neutral-700 text-neutral-400 px-1.5 py-0.5 rounded-full">Soon</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
