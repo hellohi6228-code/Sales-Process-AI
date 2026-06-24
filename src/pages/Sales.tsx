@@ -12,7 +12,7 @@ import {
 
 const LEAD_DATA: Record<string, any[]> = {};
 
-import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText } from "../lib/googleDrive";
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder } from "../lib/googleDrive";
 
 export function Sales() {
   const {
@@ -44,6 +44,43 @@ export function Sales() {
 
   React.useEffect(() => {
     setEditingDoc(null);
+  }, [selectedLead]);
+
+  // Load existing Drive files when a lead folder is opened
+  React.useEffect(() => {
+    if (!selectedLead) return;
+    const googleToken = localStorage.getItem('google_provider_token');
+    if (!googleToken) return;
+
+    (async () => {
+      try {
+        const folderId = await syncFolderStructure(selectedLead, 'LEAD');
+        const driveFiles = await listFilesInFolder(folderId);
+        if (driveFiles.length === 0) return;
+
+        const docFiles = driveFiles.map((f) => ({
+          name: f.name,
+          url: f.mimeType === 'application/vnd.google-apps.document'
+            ? `https://docs.google.com/document/d/${f.id}/edit`
+            : `https://drive.google.com/file/d/${f.id}/view`,
+          googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+        }));
+
+        setLeadSourceDocs((prev: Record<string, any[]>) => {
+          const existing = prev[selectedLead] || [];
+          const merged = [...existing];
+          for (const doc of docFiles) {
+            const alreadyHave = merged.find(
+              (d) => d.googleDocId && d.googleDocId === doc.googleDocId
+            );
+            if (!alreadyHave) merged.push(doc);
+          }
+          return { ...prev, [selectedLead]: merged };
+        });
+      } catch (e) {
+        console.error('Failed to load Drive files for lead:', e);
+      }
+    })();
   }, [selectedLead]);
 
   React.useEffect(() => {
