@@ -331,7 +331,7 @@ export async function listFilesInFolder(folderId: string): Promise<Array<{id: st
   const token = await ensureValidGoogleToken();
   const query = `'${folderId}' in parents and trashed=false`;
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime desc`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime desc&pageSize=100`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   await checkDriveResponse(res, 'listing files in folder');
