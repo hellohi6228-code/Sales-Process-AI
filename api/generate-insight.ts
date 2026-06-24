@@ -48,8 +48,8 @@ export default async function handler(req: any, res: any) {
     let textContent = `Process Category: ${folderType}\nProcess/Lead Name: ${processName}\nUser Context/Prompt: ${context}\n\nAnalyze the context and generate an insight card as requested.`;
 
     if (folderType === 'Positioning') {
-        systemInstruction = `You are a strategic marketing and positioning advisor specializing in helping individual contributor, small business owner, consultant define and communicate their value.
-Using user input, conduct academic level online research and come up with the most promising market opportunities and create a clear, concise, directing positioning strategy and produce them as exactly five cards using these titles:
+        systemInstruction = `You are a strategic marketing and positioning advisor specializing in helping consultants and professional service firms define and communicate their value.
+Using user input, user professional profile, business context, research materials, market information, and supporting documents provided, identify the most promising market opportunities and create a clear positioning strategy and produce them as exactly five cards using these titles:
 Define target market
 Understand customer needs
 Analyze competitors
@@ -58,7 +58,7 @@ Develop positioning statement
 
 For each card:
 Use the title exactly as provided.
-Write ONE CONCISE, DIRECTIVE SENTENCE. Include a score out of 100 for confidence/impact.`;
+Write ONE CONCISE SENTENCE. Include a score out of 100 for confidence/impact.`;
         textContent = `User input: ${context || 'Analyze the attached.'}`;
     }
 
@@ -94,7 +94,7 @@ Write ONE concise sentence. Include a score out of 100 for confidence/impact.`;
     });
     
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.5-flash',
       contents: { parts },
       config: {
         systemInstruction,
