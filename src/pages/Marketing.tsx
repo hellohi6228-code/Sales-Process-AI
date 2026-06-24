@@ -20,7 +20,7 @@ import {
 
 const CARDS_BY_PROCESS: Record<string, any[]> = {};
 
-import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder, ensureValidGoogleToken } from "../lib/googleDrive";
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder } from "../lib/googleDrive";
 
 export function Marketing() {
   const {
@@ -100,7 +100,7 @@ export function Marketing() {
     setEditingDoc(null);
   }, [selectedFolder]);
 
-  // Load existing files from Google Drive when a folder is opened
+  // Load existing Drive files when a process folder is opened
   React.useEffect(() => {
     if (!selectedFolder) return;
     const googleToken = localStorage.getItem('google_provider_token');
@@ -131,22 +131,11 @@ export function Marketing() {
           }
           return { ...prev, [selectedFolder]: merged };
         });
-      } catch (e) {
-        console.error('Failed to load Drive files for folder:', e);
+      } catch (e: any) {
+        console.error('[Drive] Failed to load files:', e?.message || e);
       }
     })();
   }, [selectedFolder]);
-
-  React.useEffect(() => {
-    if (!isAddModalOpen) {
-      setContextInput("");
-      setAttachedFiles([]);
-    }
-  }, [isAddModalOpen]);
-
-  React.useEffect(() => {
-    if (selectedFolder && selectedFolder !== "Positioning") {
-      const leads = processLeads[selectedFolder] || [];
       if (leads.length === 0 && leadFolders.length === 1 && !selectedActiveLead) {
         // Automatically add the single existing lead to this folder and select it
         setProcessLeads((prev: Record<string, string[]>) => ({
