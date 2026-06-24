@@ -94,7 +94,7 @@ Write ONE concise sentence. Include a score out of 100 for confidence/impact.`;
     });
     
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.0-flash',
       contents: { parts },
       config: {
         systemInstruction,
