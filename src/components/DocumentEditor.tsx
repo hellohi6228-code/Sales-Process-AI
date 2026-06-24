@@ -88,10 +88,13 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
 
   const docState = documentStates[doc.name];
 
+  // For Google Docs, content is fetched from the cloud after mount.
+  // For local base64 docs, decode immediately.
   const defaultContent = (() => {
     if (doc.url && doc.url.startsWith("data:text")) {
       try { return atob(doc.url.split(",")[1]); } catch { return ""; }
     }
+    if (doc.googleDocId) return ""; // will be loaded from Drive
     return "";
   })();
 
@@ -104,7 +107,10 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
   );
   const [commentInput, setCommentInput] = useState("");
   // Remote ID might be pre-loaded from doc, or assigned after first save
-  const [remoteId, setRemoteId] = useState<string | null>(doc.googleDocId ?? doc.remoteId ?? null);
+  // remoteId drives cloud sync — prefer googleDocId (from context summary docs)
+  const [remoteId, setRemoteId] = useState<string | null>(
+    doc.googleDocId ?? doc.remoteId ?? null
+  );
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>(content);
@@ -308,12 +314,18 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
           ) : doc.url?.startsWith("data:application/pdf") ? (
             <embed src={doc.url} width="100%" height="700px" type="application/pdf" className="rounded-xl shadow-sm" />
           ) : (
+            {syncStatus === 'loading' ? (
+            <div className="flex items-center justify-center h-full min-h-[300px] text-neutral-400 text-sm gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading document from Google Drive…
+            </div>
+          ) : (
             <textarea
               value={content}
               onChange={handleContentChange}
               className="w-full h-full min-h-[500px] bg-transparent font-serif text-lg leading-relaxed text-neutral-800 dark:text-neutral-200 outline-none focus:ring-2 focus:ring-sky-500/50 p-4 rounded-xl transition whitespace-pre-wrap resize-none"
-              placeholder="Start typing… changes sync automatically."
+              placeholder="Start typing… changes sync automatically to Google Drive."
             />
+          )}
           )}
         </div>
       </div>
