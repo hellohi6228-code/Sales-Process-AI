@@ -316,28 +316,19 @@ export function Sales() {
                         {leadSourceDocs[selectedLead]?.map(
                           (doc: any, i: number) => (
                             <div key={i} className="flex flex-col gap-1 w-full mt-2">
-                              <a
-                                href={doc.googleDocId ? `https://docs.google.com/document/d/${doc.googleDocId}/edit` : doc.url}
-                                onClick={(e) => {
-                                  if (!doc.googleDocId && doc.url.startsWith("data:text/html")) {
-                                    e.preventDefault();
-                                    setEditingDoc(doc);
-                                  }
+                              <button
+                                onClick={() => {
+                                  setEditingDoc(doc);
+                                  setIsContextExpanded(false);
                                 }}
-                                target="_blank"
-                                rel="noopener noreferrer"
                                 className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center justify-between"
                               >
                                 <div className="flex items-center gap-2 truncate">
                                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
                                   <span className="truncate">{doc.name}</span>
                                 </div>
-                              </a>
-                              {doc.googleDocId && (
-                                <a href={`https://docs.google.com/document/d/${doc.googleDocId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[10px] uppercase font-bold text-sky-500 hover:underline pl-3.5">
-                                  Open in Docs ↗
-                                </a>
-                              )}
+                                <span className="text-[10px] text-neutral-400 font-semibold shrink-0 ml-2">Edit</span>
+                              </button>
                             </div>
                           ),
                         )}
