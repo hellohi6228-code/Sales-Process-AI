@@ -234,7 +234,6 @@ export async function updateFileContent(fileId: string, content: string) {
   await checkDriveResponse(res, 'updating file content');
   return res.json();
 }
-// Folder registry helpers
 
 export function getFolderIdForView(view: string): string | null {
   const folderMap: Record<string, string | null> = {
@@ -242,11 +241,8 @@ export function getFolderIdForView(view: string): string | null {
     PROCESS: localStorage.getItem('process_folder_id'),
     DOCUMENTS: localStorage.getItem('documents_folder_id'),
   };
-
   return folderMap[view] ?? null;
 }
-
-// Sharing helpers
 
 export async function shareFolderWithEmail(
   folderId: string,
@@ -270,12 +266,7 @@ export async function shareFolderWithEmail(
       }),
     }
   );
-
-  await checkDriveResponse(
-    res,
-    `sharing folder with ${email}`
-  );
-
+  await checkDriveResponse(res, `sharing folder with ${email}`);
   return res.json();
 }
 
@@ -287,51 +278,31 @@ export async function revokeFolderAccessForEmail(
 
   const permsRes = await fetch(
     `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress)`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
+    { headers: { Authorization: `Bearer ${token}` } }
   );
-
-  await checkDriveResponse(
-    permsRes,
-    'loading permissions'
-  );
+  await checkDriveResponse(permsRes, 'loading permissions');
 
   const data = await permsRes.json();
+  const permission = data.permissions?.find((p: any) => p.emailAddress === email);
 
-  const permission = data.permissions?.find(
-    (p: any) => p.emailAddress === email
-  );
-
-  if (!permission) {
-    return false;
-  }
+  if (!permission) return false;
 
   const deleteRes = await fetch(
     `https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${permission.id}`,
     {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     }
   );
-
-  await checkDriveResponse(
-    deleteRes,
-    `revoking access for ${email}`
-  );
-
+  await checkDriveResponse(deleteRes, `revoking access for ${email}`);
   return true;
 }
 
-export async function listFilesInFolder(folderId: string): Promise<Array<{id: string, name: string, mimeType: string}>> {
+export async function listFilesInFolder(folderId: string): Promise<Array<{ id: string; name: string; mimeType: string }>> {
   const token = await ensureValidGoogleToken();
   const query = `'${folderId}' in parents and trashed=false`;
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime desc&pageSize=100`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime%20desc&pageSize=100`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   await checkDriveResponse(res, 'listing files in folder');
