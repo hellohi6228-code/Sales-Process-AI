@@ -80,7 +80,7 @@ Write a short paragraph of 2-3 concise sentences.`;
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.5-flash',
       contents: { parts },
       config: {
         systemInstruction,
