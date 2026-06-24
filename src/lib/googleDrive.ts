@@ -234,3 +234,95 @@ export async function updateFileContent(fileId: string, content: string) {
   await checkDriveResponse(res, 'updating file content');
   return res.json();
 }
+// Folder registry helpers
+
+export function getFolderIdForView(view: string): string | null {
+  const folderMap: Record<string, string | null> = {
+    LEAD: localStorage.getItem('lead_folder_id'),
+    PROCESS: localStorage.getItem('process_folder_id'),
+    DOCUMENTS: localStorage.getItem('documents_folder_id'),
+  };
+
+  return folderMap[view] ?? null;
+}
+
+// Sharing helpers
+
+export async function shareFolderWithEmail(
+  folderId: string,
+  email: string,
+  role: 'reader' | 'writer' = 'writer'
+) {
+  const token = await ensureValidGoogleToken();
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'user',
+        role,
+        emailAddress: email,
+      }),
+    }
+  );
+
+  await checkDriveResponse(
+    res,
+    `sharing folder with ${email}`
+  );
+
+  return res.json();
+}
+
+export async function revokeFolderAccessForEmail(
+  folderId: string,
+  email: string
+) {
+  const token = await ensureValidGoogleToken();
+
+  const permsRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress)`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  await checkDriveResponse(
+    permsRes,
+    'loading permissions'
+  );
+
+  const data = await permsRes.json();
+
+  const permission = data.permissions?.find(
+    (p: any) => p.emailAddress === email
+  );
+
+  if (!permission) {
+    return false;
+  }
+
+  const deleteRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${permission.id}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  await checkDriveResponse(
+    deleteRes,
+    `revoking access for ${email}`
+  );
+
+  return true;
+}
