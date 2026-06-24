@@ -313,8 +313,7 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
             <img src={doc.url} alt={doc.name} className="max-w-full rounded-xl shadow-sm" />
           ) : doc.url?.startsWith("data:application/pdf") ? (
             <embed src={doc.url} width="100%" height="700px" type="application/pdf" className="rounded-xl shadow-sm" />
-          ) : (
-            {syncStatus === 'loading' ? (
+          ) : syncStatus === 'loading' ? (
             <div className="flex items-center justify-center h-full min-h-[300px] text-neutral-400 text-sm gap-2">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading document from Google Drive…
             </div>
@@ -325,7 +324,6 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
               className="w-full h-full min-h-[500px] bg-transparent font-serif text-lg leading-relaxed text-neutral-800 dark:text-neutral-200 outline-none focus:ring-2 focus:ring-sky-500/50 p-4 rounded-xl transition whitespace-pre-wrap resize-none"
               placeholder="Start typing… changes sync automatically to Google Drive."
             />
-          )}
           )}
         </div>
       </div>
