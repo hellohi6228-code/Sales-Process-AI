@@ -326,3 +326,15 @@ export async function revokeFolderAccessForEmail(
 
   return true;
 }
+
+export async function listFilesInFolder(folderId: string): Promise<Array<{id: string, name: string, mimeType: string}>> {
+  const token = await ensureValidGoogleToken();
+  const query = `'${folderId}' in parents and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime desc`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await checkDriveResponse(res, 'listing files in folder');
+  const data = await res.json();
+  return data.files || [];
+}
