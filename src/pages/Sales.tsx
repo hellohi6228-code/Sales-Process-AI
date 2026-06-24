@@ -77,21 +77,11 @@ export function Sales() {
           }
           return { ...prev, [selectedLead]: merged };
         });
-      } catch (e) {
-        console.error('Failed to load Drive files for lead:', e);
+      } catch (e: any) {
+        console.error('[Drive] Failed to load files:', e?.message || e);
       }
     })();
   }, [selectedLead]);
-
-  React.useEffect(() => {
-    if (!isAddModalOpen) {
-      setContextInput("");
-      setAttachedFiles([]);
-    }
-  }, [isAddModalOpen]);
-
-  const getActiveCards = () => {
-    if (!selectedLead) return [];
     const isMockLead = selectedLead === "Precision Components Inc.";
     // Fallback to legacy keys if they exist
     const legacyKey = `${selectedLead}_form`;
