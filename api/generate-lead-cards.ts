@@ -2,7 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
 import * as mammoth from 'mammoth';
 
-const MODELS_TO_TRY = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash-latest'];
+const MODELS_TO_TRY = [
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+];
 
 async function generateWithFallback(ai: GoogleGenAI, params: any): Promise<any> {
   let lastError: any;
@@ -13,15 +18,19 @@ async function generateWithFallback(ai: GoogleGenAI, params: any): Promise<any> 
         return response;
       } catch (e: any) {
         lastError = e;
-        const isRetryable =
-          e.status === 503 || e.status === 429 ||
-          e.message?.includes('503') || e.message?.includes('429') ||
-          e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE') ||
-          e.message?.includes('RESOURCE_EXHAUSTED') || e.message?.includes('quota');
-        if (isRetryable && attempt < 2) {
-          await new Promise(r => setTimeout(r, 3000 * attempt));
-        } else if (isRetryable) {
-          console.log(`[API] ${model} quota hit, trying next model...`);
+        const isQuota = e.status === 429 || e.message?.includes('429') || e.message?.includes('RESOURCE_EXHAUSTED') || e.message?.includes('quota');
+        const isUnavailable = e.status === 503 || e.message?.includes('503') || e.message?.includes('UNAVAILABLE') || e.message?.includes('high demand');
+        const isNotFound = e.status === 404 || e.message?.includes('NOT_FOUND') || e.message?.includes('not found');
+
+        if (isNotFound) {
+          console.log(`[API] ${model} not found, skipping...`);
+          break;
+        }
+        if ((isQuota || isUnavailable) && attempt < 2) {
+          console.log(`[API] ${model} rate limited, waiting before retry...`);
+          await new Promise(r => setTimeout(r, 4000));
+        } else if (isQuota || isUnavailable) {
+          console.log(`[API] ${model} still rate limited, trying next model...`);
           break;
         } else {
           throw e;
@@ -43,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({
         companyName: 'New Lead',
         cards: [
-          { title: 'Company Profile', text: 'Add a GEMINI_API_KEY environment variable to generate AI-powered lead cards.' },
+          { title: 'Company Profile', text: 'Add a GEMINI_API_KEY environment variable in Vercel to generate AI-powered lead cards.' },
           { title: 'Needs & Pain Points', text: 'Context provided: ' + (context?.substring(0, 100) || 'None') },
           { title: 'Engagement History', text: 'Upload documents or enter context to get started.' },
         ],
