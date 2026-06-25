@@ -101,7 +101,7 @@ export function Marketing() {
     setEditingDoc(null);
   }, [selectedFolder]);
 
-  // Load existing Drive files when a process folder is opened
+  // Load existing Drive files when a process folder is opened — always refreshes from Drive
   React.useEffect(() => {
     if (!selectedFolder) return;
     const googleToken = localStorage.getItem('google_provider_token');
@@ -111,8 +111,7 @@ export function Marketing() {
       try {
         const folderId = await syncFolderStructure(selectedFolder, 'PROCESS');
         const driveFiles = await listFilesInFolder(folderId);
-        if (driveFiles.length === 0) return;
-
+        // Always replace with latest from Drive (not just merge) so deleted files disappear too
         const docFiles = driveFiles.map((f) => ({
           name: f.name,
           url: f.mimeType === 'application/vnd.google-apps.document'
@@ -121,17 +120,10 @@ export function Marketing() {
           googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
         }));
 
-        setProcessSourceDocs((prev: Record<string, any[]>) => {
-          const existing = prev[selectedFolder] || [];
-          const merged = [...existing];
-          for (const doc of docFiles) {
-            const alreadyHave = merged.find(
-              (d) => d.googleDocId && d.googleDocId === doc.googleDocId
-            );
-            if (!alreadyHave) merged.push(doc);
-          }
-          return { ...prev, [selectedFolder]: merged };
-        });
+        setProcessSourceDocs((prev: Record<string, any[]>) => ({
+          ...prev,
+          [selectedFolder]: docFiles,
+        }));
       } catch (e: any) {
         console.error('[Drive] Failed to load files:', e?.message || e);
       }
