@@ -34,6 +34,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
 
+  // ── ONBOARDING STATE ──
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('user_profile');
+      return saved ? JSON.parse(saved)?.onboarding_complete === true : false;
+    } catch { return false; }
+  });
+
+  const [userProfile, setUserProfile] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('user_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+
+
   const [processFolders, setProcessFolders] = useState<string[]>(initialProcessFolders);
   const [leadFolders, setLeadFolders] = useState<string[]>(initialLeadFolders);
   const [customCardsProcess, setCustomCardsProcess] = useState<Record<string, any[]>>({});
@@ -316,6 +332,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       proposalThreads, setProposalThreads, addProposalThread,
       syncDriveToState,
       isSyncing,
+      onboardingComplete, setOnboardingComplete,
+      userProfile, setUserProfile,
     }}>
       {children}
     </AppContext.Provider>
