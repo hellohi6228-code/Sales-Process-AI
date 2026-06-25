@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
 import * as mammoth from 'mammoth';
 
-const MODELS_TO_TRY = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+const MODELS_TO_TRY = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash-latest'];
 
 async function generateWithFallback(ai: GoogleGenAI, params: any): Promise<any> {
   let lastError: any;
