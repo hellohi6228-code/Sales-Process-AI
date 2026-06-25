@@ -74,6 +74,8 @@ export function Sales() {
       }
     })();
   }, [selectedLead]);
+
+  const getActiveCards = () => {
     const isMockLead = selectedLead === "Precision Components Inc.";
     // Fallback to legacy keys if they exist
     const legacyKey = `${selectedLead}_form`;
