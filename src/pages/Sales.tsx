@@ -56,8 +56,7 @@ export function Sales() {
       try {
         const folderId = await syncFolderStructure(selectedLead, 'LEAD');
         const driveFiles = await listFilesInFolder(folderId);
-        if (driveFiles.length === 0) return;
-
+        // Always replace with latest from Drive so dropped files appear immediately
         const docFiles = driveFiles.map((f) => ({
           name: f.name,
           url: f.mimeType === 'application/vnd.google-apps.document'
@@ -66,17 +65,10 @@ export function Sales() {
           googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
         }));
 
-        setLeadSourceDocs((prev: Record<string, any[]>) => {
-          const existing = prev[selectedLead] || [];
-          const merged = [...existing];
-          for (const doc of docFiles) {
-            const alreadyHave = merged.find(
-              (d) => d.googleDocId && d.googleDocId === doc.googleDocId
-            );
-            if (!alreadyHave) merged.push(doc);
-          }
-          return { ...prev, [selectedLead]: merged };
-        });
+        setLeadSourceDocs((prev: Record<string, any[]>) => ({
+          ...prev,
+          [selectedLead]: docFiles,
+        }));
       } catch (e: any) {
         console.error('[Drive] Failed to load files:', e?.message || e);
       }
