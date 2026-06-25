@@ -309,3 +309,54 @@ export async function listFilesInFolder(folderId: string): Promise<Array<{ id: s
   const data = await res.json();
   return data.files || [];
 }
+
+/**
+ * Lists all folders directly under a root folder (LEAD or PROCESS).
+ * Returns array of { id, name } for each sub-folder found.
+ */
+export async function listSubFolders(parentId: string): Promise<Array<{ id: string; name: string }>> {
+  const token = await ensureValidGoogleToken();
+  const query = `mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&orderBy=name&pageSize=200`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await checkDriveResponse(res, 'listing sub-folders');
+  const data = await res.json();
+  return data.files || [];
+}
+
+/**
+ * Finds a root-level folder by name WITHOUT creating it.
+ * Returns the folder id or null if not found.
+ */
+export async function findFolder(name: string, parentId?: string): Promise<string | null> {
+  const token = await ensureValidGoogleToken();
+  let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`;
+  if (parentId) query += ` and '${parentId}' in parents`;
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await checkDriveResponse(res, 'finding folder');
+  const data = await res.json();
+  return data.files?.[0]?.id ?? null;
+}
+
+/**
+ * Lists files in a folder, including all sub-folder files recursively (one level deep).
+ * Used for scanning a process folder like "Proposal" that may have docs in it.
+ */
+export async function listFilesInFolderRecursive(folderId: string): Promise<Array<{ id: string; name: string; mimeType: string; parentId: string }>> {
+  const token = await ensureValidGoogleToken();
+  // First get direct files
+  const query = `'${folderId}' in parents and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&orderBy=createdTime%20desc&pageSize=200`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await checkDriveResponse(res, 'listing files recursive');
+  const data = await res.json();
+  return (data.files || []).map((f: any) => ({ ...f, parentId: folderId }));
+}
