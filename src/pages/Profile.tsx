@@ -2,21 +2,105 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/SupabaseClient';
 import { useAppContext } from '../AppContext';
 
+// Mirror of the AVATARS constant from Onboarding.tsx
+const AVATARS = [
+  { id: 0, col: 0, row: 0 }, { id: 1, col: 1, row: 0 }, { id: 2, col: 2, row: 0 },
+  { id: 3, col: 3, row: 0 }, { id: 4, col: 4, row: 0 }, { id: 5, col: 0, row: 1 },
+  { id: 6, col: 1, row: 1 }, { id: 7, col: 2, row: 1 }, { id: 8, col: 3, row: 1 },
+  { id: 9, col: 4, row: 1 }, { id: 10, col: 0, row: 2 }, { id: 11, col: 1, row: 2 },
+  { id: 12, col: 2, row: 2 }, { id: 13, col: 3, row: 2 }, { id: 14, col: 4, row: 2 },
+];
+
+function AvatarDisplay({ avatarId, size = 72 }: { avatarId: number | null | undefined; size?: number }) {
+  const CELL_W = 213;
+  const CELL_H = 212;
+  const scale = size / CELL_W;
+  const av = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
+
+  return (
+    <div
+      className="rounded-full overflow-hidden ring-2 ring-neutral-200 dark:ring-neutral-700 flex-shrink-0"
+      style={{ width: size, height: size }}
+    >
+      <div
+        style={{
+          width: size,
+          height: size,
+          backgroundImage: `url('/avatar_assets.png')`,
+          backgroundSize: `${5 * CELL_W * scale}px ${3 * CELL_H * scale}px`,
+          backgroundPosition: `${-av.col * CELL_W * scale}px ${-av.row * CELL_H * scale}px`,
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+    </div>
+  );
+}
+
+function AvatarPicker({ selected, onSelect }: { selected: number | null; onSelect: (id: number) => void }) {
+  const CELL_W = 213;
+  const CELL_H = 212;
+  const DISPLAY = 52;
+  const scale = DISPLAY / CELL_W;
+
+  return (
+    <div className="grid grid-cols-5 gap-2">
+      {AVATARS.map((av) => {
+        const isSelected = selected === av.id;
+        return (
+          <button
+            key={av.id}
+            onClick={() => onSelect(av.id)}
+            className={`relative rounded-xl overflow-hidden transition-all active:scale-95 ${
+              isSelected
+                ? 'ring-2 ring-neutral-900 dark:ring-white ring-offset-2 ring-offset-white dark:ring-offset-neutral-800 scale-105'
+                : 'hover:scale-105 opacity-75 hover:opacity-100'
+            }`}
+            style={{ width: DISPLAY, height: DISPLAY }}
+          >
+            <div
+              style={{
+                width: DISPLAY,
+                height: DISPLAY,
+                backgroundImage: `url('/avatar_assets.png')`,
+                backgroundSize: `${5 * CELL_W * scale}px ${3 * CELL_H * scale}px`,
+                backgroundPosition: `${-av.col * CELL_W * scale}px ${-av.row * CELL_H * scale}px`,
+                backgroundRepeat: 'no-repeat',
+              }}
+            />
+            {isSelected && (
+              <div className="absolute inset-0 flex items-center justify-center bg-neutral-900/20">
+                <svg className="w-4 h-4 text-white drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Profile() {
-  const { session } = useAppContext();
+  const { session, userProfile, setUserProfile } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  
+
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [avatarId, setAvatarId] = useState<number | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   useEffect(() => {
-    if (session?.user?.email) {
-      setEmail(session.user.email);
-    }
-  }, [session]);
+    if (session?.user?.email) setEmail(session.user.email);
+    const profile = userProfile ?? (() => {
+      try { return JSON.parse(localStorage.getItem('user_profile') ?? '{}'); } catch { return {}; }
+    })();
+    if (profile?.full_name) setFullName(profile.full_name);
+    if (profile?.avatar_id != null) setAvatarId(profile.avatar_id);
+  }, [session, userProfile]);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,31 +109,31 @@ export function Profile() {
     setError('');
 
     try {
-      const updates: any = {};
-      // Supabase edge cases may not allow email update without extra config, 
-      // but let's try assuming standard config.
-      if (email !== session?.user?.email) {
-        updates.email = email;
-      }
-
+      const authUpdates: any = {};
+      if (email !== session?.user?.email) authUpdates.email = email;
       if (password) {
-        if (password !== confirmPassword) {
-          throw new Error('Passwords do not match');
-        }
-        updates.password = password;
+        if (password !== confirmPassword) throw new Error('Passwords do not match');
+        authUpdates.password = password;
       }
 
-      if (Object.keys(updates).length > 0) {
-        const { error } = await supabase.auth.updateUser(updates);
-        if (error) {
-          throw error;
-        }
-        setMessage('Profile updated successfully.');
-        setPassword('');
-        setConfirmPassword('');
-      } else {
-        setMessage('No changes made.');
-      }
+      const profileData = {
+        ...(userProfile ?? {}),
+        full_name: fullName,
+        avatar_id: avatarId,
+        onboarding_complete: true,
+      };
+
+      // Always update profile metadata
+      authUpdates.data = profileData;
+
+      const { error } = await supabase.auth.updateUser(authUpdates);
+      if (error) throw error;
+
+      localStorage.setItem('user_profile', JSON.stringify(profileData));
+      setUserProfile(profileData);
+      setMessage('Profile updated successfully.');
+      setPassword('');
+      setConfirmPassword('');
     } catch (err: any) {
       setError(err.message || 'An error occurred while updating profile.');
     } finally {
@@ -58,11 +142,36 @@ export function Profile() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
+    <div className="max-w-2xl mx-auto py-8 space-y-6">
+      {/* Profile header card */}
+      <div className="bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md border border-white dark:border-neutral-700 rounded-[24px] p-6 shadow-sm flex items-center gap-5">
+        <AvatarDisplay avatarId={avatarId} size={72} />
+        <div>
+          <p className="text-lg font-bold text-neutral-900 dark:text-white">
+            {fullName || session?.user?.email?.split('@')[0] || 'Your Profile'}
+          </p>
+          <p className="text-sm text-neutral-500">{session?.user?.email}</p>
+        </div>
+      </div>
+
+      {/* Edit form */}
       <div className="bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md border border-white dark:border-neutral-700 rounded-[24px] p-8 shadow-sm">
-        <h2 className="text-2xl font-bold mb-6 text-neutral-900 dark:text-white">Profile Settings</h2>
-        
+        <h2 className="text-xl font-bold mb-6 text-neutral-900 dark:text-white">Profile Settings</h2>
+
         <form onSubmit={handleUpdate} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              Full Name
+            </label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Your name"
+              className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
               Email Address
@@ -73,51 +182,55 @@ export function Profile() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
             />
-            <p className="text-xs text-neutral-500 mt-1">If you change your email, you will need to verify the new address.</p>
+            <p className="text-xs text-neutral-500 mt-1">If you change your email, you'll need to verify the new address.</p>
           </div>
 
           <div>
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mt-8 mb-4">Change Password</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  New Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Leave blank to keep current password"
-                  className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
-                />
-              </div>
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
+              Avatar
+            </label>
+            <AvatarPicker selected={avatarId} onSelect={setAvatarId} />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                  Confirm New Password
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
-                  disabled={!password}
-                />
-              </div>
+          <div>
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-white mt-6 mb-4">Change Password</h3>
+            <div className="space-y-4">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="New password (leave blank to keep current)"
+                className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                disabled={!password}
+                className="w-full p-4 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 transition-shadow disabled:opacity-40"
+              />
             </div>
           </div>
 
-          {error && <div className="text-sm font-medium text-red-500 bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-200 dark:border-red-800">{error}</div>}
-          {message && <div className="text-sm font-medium text-green-500 bg-green-50 dark:bg-green-900/10 p-3 rounded-lg border border-green-200 dark:border-green-800">{message}</div>}
+          {error && (
+            <div className="text-sm font-medium text-red-500 bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-200 dark:border-red-800">
+              {error}
+            </div>
+          )}
+          {message && (
+            <div className="text-sm font-medium text-green-600 bg-green-50 dark:bg-green-900/10 p-3 rounded-lg border border-green-200 dark:border-green-800">
+              {message}
+            </div>
+          )}
 
-          <div className="pt-4 flex justify-end">
+          <div className="pt-2 flex justify-end">
             <button
               type="submit"
               disabled={loading}
               className="py-3 px-6 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow disabled:opacity-50"
             >
-              {loading ? 'Saving Changes...' : 'Save Changes'}
+              {loading ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>
