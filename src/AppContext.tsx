@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/SupabaseClient';
 import { Session } from '@supabase/supabase-js';
-import { initializeDefaultProcessFolders, recordGoogleTokenObtained, GoogleDriveError } from './lib/googleDrive';
+import {
+  initializeDefaultProcessFolders,
+  recordGoogleTokenObtained,
+  GoogleDriveError,
+  findFolder,
+  listSubFolders,
+  listFilesInFolder,
+} from './lib/googleDrive';
 import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
 
 const initialProcessFolders = [
@@ -42,6 +49,97 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [googleToken, setGoogleToken] = useState<string | null>(localStorage.getItem('google_provider_token'));
   const [notification, setNotification] = useState<Notification | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  /**
+   * Scans Google Drive for existing LEAD and PROCESS folders/files
+   * and populates React state. Called on login and can be triggered manually.
+   */
+  const syncDriveToState = useCallback(async () => {
+    const token = localStorage.getItem('google_provider_token');
+    if (!token) return;
+    setIsSyncing(true);
+    try {
+      // Sync LEAD folders
+      const leadRootId = await findFolder('LEAD');
+      if (leadRootId) {
+        const leadSubFolders = await listSubFolders(leadRootId);
+        if (leadSubFolders.length > 0) {
+          const leadNames = leadSubFolders.map((f) => f.name);
+          setLeadFolders((prev: string[]) => {
+            const merged = [...prev];
+            for (const name of leadNames) {
+              if (!merged.includes(name)) merged.push(name);
+            }
+            return merged;
+          });
+
+          // Load docs for each lead folder
+          for (const folder of leadSubFolders) {
+            try {
+              const files = await listFilesInFolder(folder.id);
+              if (files.length === 0) continue;
+              const docFiles = files.map((f) => ({
+                name: f.name,
+                url: f.mimeType === 'application/vnd.google-apps.document'
+                  ? `https://docs.google.com/document/d/${f.id}/edit`
+                  : `https://drive.google.com/file/d/${f.id}/view`,
+                googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+              }));
+              setLeadSourceDocs((prev: Record<string, any[]>) => {
+                const existing = prev[folder.name] || [];
+                const merged = [...existing];
+                for (const doc of docFiles) {
+                  if (!merged.find((d) => d.googleDocId && d.googleDocId === doc.googleDocId)) {
+                    merged.push(doc);
+                  }
+                }
+                return { ...prev, [folder.name]: merged };
+              });
+            } catch (e) {
+              console.error(`[Drive sync] Failed to list files for lead "${folder.name}":`, e);
+            }
+          }
+        }
+      }
+
+      // Sync PROCESS folders
+      const processRootId = await findFolder('PROCESS');
+      if (processRootId) {
+        const processSubFolders = await listSubFolders(processRootId);
+        // Load docs for each process sub-folder (e.g. Proposal, Discovery, etc.)
+        for (const folder of processSubFolders) {
+          try {
+            const files = await listFilesInFolder(folder.id);
+            if (files.length === 0) continue;
+            const docFiles = files.map((f) => ({
+              name: f.name,
+              url: f.mimeType === 'application/vnd.google-apps.document'
+                ? `https://docs.google.com/document/d/${f.id}/edit`
+                : `https://drive.google.com/file/d/${f.id}/view`,
+              googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+            }));
+            setProcessSourceDocs((prev: Record<string, any[]>) => {
+              const existing = prev[folder.name] || [];
+              const merged = [...existing];
+              for (const doc of docFiles) {
+                if (!merged.find((d) => d.googleDocId && d.googleDocId === doc.googleDocId)) {
+                  merged.push(doc);
+                }
+              }
+              return { ...prev, [folder.name]: merged };
+            });
+          } catch (e) {
+            console.error(`[Drive sync] Failed to list files for process "${folder.name}":`, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Drive sync] Full sync failed:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
 
   // --- Team Pool (used by the Executive tab's drag-to-folder Drive sharing) ---
   const [teamMembers, setTeamMembers] = useState<any[]>(() => {
@@ -179,10 +277,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (googleToken) {
+      // Initialize default process folder structure in Drive
       initializeDefaultProcessFolders(initialProcessFolders).catch((e) => {
-        console.error("Failed to initialize Google Drive folders:", e);
+        console.error('Failed to initialize Google Drive folders:', e);
         reportGoogleError(e, 'Failed to set up Google Drive folders');
       });
+      // Sync all existing Drive files to app state
+      syncDriveToState();
     }
   }, [googleToken]);
 
@@ -213,6 +314,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reconnectGoogle,
       teamMembers, setTeamMembers, inviteTeamMember,
       proposalThreads, setProposalThreads, addProposalThread,
+      syncDriveToState,
+      isSyncing,
     }}>
       {children}
     </AppContext.Provider>
