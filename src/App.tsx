@@ -14,15 +14,26 @@ import { SignUp } from './pages/SignUp';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { UpdatePassword } from './pages/UpdatePassword';
 import { Profile } from './pages/Profile';
+import { Onboarding } from './pages/Onboarding';
 
 import { AppProvider, useAppContext } from './AppContext';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session } = useAppContext();
+  const { session, onboardingComplete } = useAppContext();
   if (!session) {
     return <Navigate to="/login" replace />;
   }
+  if (!onboardingComplete) {
+    return <Navigate to="/onboarding" replace />;
+  }
   return <>{children}</>;
+}
+
+function OnboardingRoute() {
+  const { session, onboardingComplete } = useAppContext();
+  if (!session) return <Navigate to="/login" replace />;
+  if (onboardingComplete) return <Navigate to="/" replace />;
+  return <Onboarding />;
 }
 
 export default function App() {
@@ -34,6 +45,7 @@ export default function App() {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/update-password" element={<UpdatePassword />} />
+          <Route path="/onboarding" element={<OnboardingRoute />} />
           <Route path="/" element={
             <ProtectedRoute>
               <Layout />
