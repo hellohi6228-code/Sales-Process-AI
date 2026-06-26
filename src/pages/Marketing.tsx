@@ -36,7 +36,13 @@ export function Marketing() {
     processSourceDocs,
     setProcessSourceDocs,
     reportGoogleError,
+    sharedProcessFolders,
+    sharedProcessSourceDocs,
+    setSharedProcessSourceDocs,
+    sharedFoldersMap,
+    sharedLeadFolders,
   } = useAppContext();
+  const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [isContextExpanded, setIsContextExpanded] = useState(false);
@@ -55,6 +61,12 @@ export function Marketing() {
   const [isClientActionModalOpen, setIsClientActionModalOpen] = useState(false);
   const [clientFeedback, setClientFeedback] = useState("");
   const [proposalEmail, setProposalEmail] = useState("");
+
+  const activeProcessFolders = viewMode === 'shared' ? sharedProcessFolders : processFolders;
+  const activeProcessDocs = viewMode === 'shared'
+    ? sharedProcessSourceDocs[selectedFolder || ''] || []
+    : processSourceDocs[selectedFolder || ''] || [];
+  const activeLeadFolders = viewMode === 'shared' ? sharedLeadFolders : leadFolders;
 
   const handleClientFeedback = (type: 'reject' | 'accept') => {
     const activeVersionNum = (customCards["version proposed"] || []).filter(c => c.lead === selectedActiveLead).length;
