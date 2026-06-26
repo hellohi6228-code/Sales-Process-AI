@@ -109,7 +109,15 @@ export function Marketing() {
 
     (async () => {
       try {
-        const folderId = await syncFolderStructure(selectedFolder, 'PROCESS');
+        const folderId = viewMode === 'shared'
+          ? sharedFoldersMap[selectedFolder]
+          : await syncFolderStructure(selectedFolder, 'PROCESS');
+
+        if (!folderId) {
+          console.warn('[Drive] No folder ID found for shared process:', selectedFolder);
+          return;
+        }
+
         const driveFiles = await listFilesInFolder(folderId);
         // Always replace with latest from Drive (not just merge) so deleted files disappear too
         const docFiles = driveFiles.map((f) => ({
@@ -120,32 +128,39 @@ export function Marketing() {
           googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
         }));
 
-        setProcessSourceDocs((prev: Record<string, any[]>) => ({
-          ...prev,
-          [selectedFolder]: docFiles,
-        }));
+        if (viewMode === 'shared') {
+          setSharedProcessSourceDocs((prev: Record<string, any[]>) => ({
+            ...prev,
+            [selectedFolder]: docFiles,
+          }));
+        } else {
+          setProcessSourceDocs((prev: Record<string, any[]>) => ({
+            ...prev,
+            [selectedFolder]: docFiles,
+          }));
+        }
       } catch (e: any) {
         console.error('[Drive] Failed to load files:', e?.message || e);
       }
     })();
-  }, [selectedFolder]);
+  }, [selectedFolder, viewMode, sharedFoldersMap]);
 
   React.useEffect(() => {
     if (selectedFolder && selectedFolder !== "Positioning") {
       const leads = processLeads[selectedFolder] || [];
-      if (leads.length === 0 && leadFolders.length === 1 && !selectedActiveLead) {
+      if (leads.length === 0 && activeLeadFolders.length === 1 && !selectedActiveLead) {
         setProcessLeads((prev: Record<string, string[]>) => ({
           ...prev,
-          [selectedFolder]: [leadFolders[0]],
+          [selectedFolder]: [activeLeadFolders[0]],
         }));
-        setSelectedActiveLead(leadFolders[0]);
+        setSelectedActiveLead(activeLeadFolders[0]);
       } else if (leads.length > 0 && !leads.includes(selectedActiveLead || "")) {
         setSelectedActiveLead(leads[0]);
       } else if (leads.length === 0) {
         setSelectedActiveLead(null);
       }
     }
-  }, [selectedFolder, processLeads, leadFolders, selectedActiveLead, setProcessLeads]);
+  }, [selectedFolder, processLeads, activeLeadFolders, selectedActiveLead, setProcessLeads]);
 
   React.useEffect(() => {
     if (!isAddModalOpen) {
@@ -294,9 +309,11 @@ export function Marketing() {
         };
       });
 
+      const targetSetter = viewMode === 'shared' ? setSharedProcessSourceDocs : setProcessSourceDocs;
+
       let proposalDoc: any = null;
       if (selectedFolder === "Proposal" && newCards.length > 0) {
-        setProcessSourceDocs((prev: Record<string, any[]>) => {
+        targetSetter((prev: Record<string, any[]>) => {
           const existingDocs = prev[selectedFolder] || [];
 
           let version = 1;
@@ -329,30 +346,34 @@ export function Marketing() {
       const googleToken = localStorage.getItem('google_provider_token');
       if (googleToken) {
         try {
-          const folderId = await syncFolderStructure(selectedFolder, 'PROCESS');
+          const folderId = viewMode === 'shared'
+            ? sharedFoldersMap[selectedFolder]
+            : await syncFolderStructure(selectedFolder, 'PROCESS');
 
-          for (let i = 0; i < attachedFiles.length; i++) {
-            const f = attachedFiles[i];
-            if (f.url.startsWith("data:")) {
-              const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
-              finalDocs[i].googleDocId = driveFile.id;
+          if (folderId) {
+            for (let i = 0; i < attachedFiles.length; i++) {
+              const f = attachedFiles[i];
+              if (f.url.startsWith("data:")) {
+                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                finalDocs[i].googleDocId = driveFile.id;
+              }
             }
-          }
 
-          if (proposalDoc) {
-            const driveFile = await uploadBase64ToDrive(proposalDoc.name, proposalDoc.url, folderId);
-            proposalDoc.googleDocId = driveFile.id;
-            proposalDoc.url = `https://docs.google.com/document/d/${driveFile.id}/edit`;
-          }
+            if (proposalDoc) {
+              const driveFile = await uploadBase64ToDrive(proposalDoc.name, proposalDoc.url, folderId);
+              proposalDoc.googleDocId = driveFile.id;
+              proposalDoc.url = `https://docs.google.com/document/d/${driveFile.id}/edit`;
+            }
 
-          if (contextInput) {
-            const driveFile = await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, folderId);
-            finalDocs.push({
-              name: `${selectedFolder} Context Summary`,
-              url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
-              lead: selectedActiveLead,
-              googleDocId: driveFile.id
-            } as any);
+            if (contextInput) {
+              const driveFile = await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, folderId);
+              finalDocs.push({
+                name: `${selectedFolder} Context Summary`,
+                url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                lead: selectedActiveLead,
+                googleDocId: driveFile.id
+              } as any);
+            }
           }
         } catch (e) {
           console.error("Failed to sync to Google Drive:", e);
@@ -361,7 +382,7 @@ export function Marketing() {
       }
 
       if (proposalDoc) {
-        setProcessSourceDocs((prev: Record<string, any[]>) => {
+        targetSetter((prev: Record<string, any[]>) => {
           const existingDocs = prev[selectedFolder] || [];
           return {
             ...prev,
@@ -371,7 +392,7 @@ export function Marketing() {
       }
 
       if (attachedFiles.length > 0) {
-        setProcessSourceDocs((prev: Record<string, any[]>) => {
+        targetSetter((prev: Record<string, any[]>) => {
           const existingDocs = prev[selectedFolder] || [];
           const merged = [...existingDocs];
           for (const doc of finalDocs) {
@@ -517,7 +538,7 @@ export function Marketing() {
                           Source Documents
                         </h4>
 
-                        {processSourceDocs[selectedFolder]?.map(
+                        {activeProcessDocs?.map(
                           (doc: any, i: number) => (
                             <div key={i} className="flex flex-col gap-1 w-full mt-2">
                               <button
@@ -538,8 +559,8 @@ export function Marketing() {
                           ),
                         )}
 
-                        {(!processSourceDocs[selectedFolder] ||
-                          processSourceDocs[selectedFolder].length === 0) && (
+                        {(!activeProcessDocs ||
+                          activeProcessDocs.length === 0) && (
                           <div className="text-sm text-neutral-500 italic">No documents attached</div>
                         )}
                       </div>
@@ -665,7 +686,7 @@ export function Marketing() {
                             Lead
                           </h3>
                         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                          {leadFolders.map((lead: string) => {
+                          {activeLeadFolders.map((lead: string) => {
                             const isIncluded = (
                               processLeads[selectedFolder] || []
                             ).includes(lead);
@@ -800,8 +821,31 @@ export function Marketing() {
 
   return (
     <div className="pb-20">
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex bg-white/40 dark:bg-neutral-800/40 backdrop-blur-md rounded-xl p-1 space-x-1 shadow-sm border border-white/40 dark:border-neutral-700">
+          <button
+            onClick={() => { setViewMode('my'); setSelectedFolder(null); }}
+            className={cn(
+              "px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center",
+              viewMode === 'my' ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm" : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            My Folders
+          </button>
+          <button
+            onClick={() => { setViewMode('shared'); setSelectedFolder(null); }}
+            className={cn(
+              "px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center",
+              viewMode === 'shared' ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm" : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            Shared with me
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-8">
-        {processFolders.map((folder: string) => (
+        {activeProcessFolders.map((folder: string) => (
           <button
             key={folder}
             onClick={() => {

@@ -130,3 +130,53 @@ export async function checkForNewReplies(threads: ProposalThread[]) {
   }
   return results;
 }
+
+/** Sends an automated email invitation to a teammate via Gmail API. */
+export async function sendInviteEmail(opts: {
+  to: string;
+  inviteName: string;
+  inviterEmail: string;
+}) {
+  const token = await ensureValidGoogleToken();
+
+  const subject = `Collaborate with me on Sales & Process AI`;
+  const bodyHtml = `
+    <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; background-color: #fff;">
+      <h2 style="color: #111; margin-top: 0;">You're Invited!</h2>
+      <p style="font-size: 16px; color: #444; line-height: 1.6;">
+        <strong>${opts.inviterEmail}</strong> has invited you to collaborate on the <strong>Sales & Process AI</strong> application.
+      </p>
+      <p style="font-size: 16px; color: #444; line-height: 1.6;">
+        Even if you do not have a paid subscription, you will be able to collaborate on folders and view processes and leads shared with you.
+      </p>
+      <div style="margin: 30px 0; text-align: center;">
+        <a href="${window.location.origin}/signup" style="background-color: #000; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">
+          Sign Up Now
+        </a>
+      </div>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #888; text-align: center; margin-bottom: 0;">
+        This email was sent via the Sales & Process AI Gmail integration.
+      </p>
+    </div>
+  `;
+
+  const headers = [
+    `To: ${opts.to}`,
+    `Subject: ${subject}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `MIME-Version: 1.0`,
+  ];
+  const raw = base64UrlEncode(`${headers.join('\r\n')}\r\n\r\n${bodyHtml}`);
+
+  const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw }),
+  });
+  await checkGmailResponse(res, 'sending invite email');
+  return res.json();
+}

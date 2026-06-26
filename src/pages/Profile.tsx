@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/SupabaseClient';
 import { useAppContext } from '../AppContext';
+import { updateTeamProfileInDrive } from '../lib/googleDrive';
 
 // Mirror of the AVATARS constant from Onboarding.tsx
 const AVATARS = Array.from({ length: 15 }, (_, i) => ({
@@ -117,6 +118,14 @@ export function Profile() {
       if (userId) {
         localStorage.setItem(`user_profile_${userId}`, JSON.stringify(profileData));
       }
+
+      // Sync to Google Drive
+      try {
+        await updateTeamProfileInDrive({ name: fullName, avatarId: avatarId });
+      } catch (err) {
+        console.error('Failed to sync profile to Drive:', err);
+      }
+
       setUserProfile(profileData);
       setMessage('Profile updated successfully.');
       setPassword('');

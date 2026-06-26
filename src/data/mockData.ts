@@ -36,13 +36,7 @@ export const MESSAGES: Message[] = [
   { id: 'M-3', sender: 'Sarah (Marketing)', preview: 'The new campaign copy is ready for review.', time: 'Yesterday', unread: false },
 ];
 
-export const TEAM_MEMBERS = [
-  { id: 'TM-1', name: 'Sarah Jenkins', role: 'Sales Lead', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Sarah&backgroundColor=transparent' },
-  { id: 'TM-2', name: 'Michael Chen', role: 'Procurement', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Michael&backgroundColor=transparent' },
-  { id: 'TM-3', name: 'Alex Thompson', role: 'Engineering', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Alex&backgroundColor=transparent' },
-  { id: 'TM-4', name: 'David Chu', role: 'Compliance', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=David&backgroundColor=transparent' },
-  { id: 'TM-5', name: 'Elena Rodriguez', role: 'Marketing', avatar: 'https://api.dicebear.com/9.x/notionists/svg?seed=Elena&backgroundColor=transparent' }
-];
+export const TEAM_MEMBERS: any[] = [];
 
 export const ACTION_ITEMS: ActionItem[] = [
   { 

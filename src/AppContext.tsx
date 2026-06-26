@@ -8,6 +8,9 @@ import {
   findFolder,
   listSubFolders,
   listFilesInFolder,
+  listSharedFolders,
+  getFolderPermissions,
+  readTeamProfilesFromDrive,
 } from './lib/googleDrive';
 import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
 
@@ -51,6 +54,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [leadSourceDocs, setLeadSourceDocs] = useState<Record<string, any[]>>({});
   const [processSourceDocs, setProcessSourceDocs] = useState<Record<string, any[]>>({});
   const [documentStates, setDocumentStates] = useState<Record<string, { content: string, history: any[] }>>({});
+
+  // Shared folder states
+  const [sharedLeadFolders, setSharedLeadFolders] = useState<string[]>([]);
+  const [sharedProcessFolders, setSharedProcessFolders] = useState<string[]>([]);
+  const [sharedLeadSourceDocs, setSharedLeadSourceDocs] = useState<Record<string, any[]>>({});
+  const [sharedProcessSourceDocs, setSharedProcessSourceDocs] = useState<Record<string, any[]>>({});
+  const [sharedFoldersMap, setSharedFoldersMap] = useState<Record<string, string>>({});
 
   const [googleToken, setGoogleToken] = useState<string | null>(localStorage.getItem('google_provider_token'));
   const [notification, setNotification] = useState<Notification | null>(null);
@@ -116,6 +126,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Scans Google Drive for existing LEAD and PROCESS folders/files
+   * and populates React state. Called on login and can be triggered manually.
+   */
   /**
    * Scans Google Drive for existing LEAD and PROCESS folders/files
    * and populates React state. Called on login and can be triggered manually.
@@ -202,12 +216,115 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
+
+      // 1. Sync Shared folders
+      try {
+        const sharedFolders = await listSharedFolders();
+        const nextSharedLeadFolders: string[] = [];
+        const nextSharedProcessFolders: string[] = [];
+        const nextSharedFoldersMap: Record<string, string> = {};
+
+        for (const folder of sharedFolders) {
+          if (folder.name === 'PROCESS' || folder.name === 'LEAD') continue;
+          nextSharedFoldersMap[folder.name] = folder.id;
+          
+          const isProcess = initialProcessFolders.includes(folder.name);
+          if (isProcess) {
+            if (!nextSharedProcessFolders.includes(folder.name)) {
+              nextSharedProcessFolders.push(folder.name);
+            }
+          } else {
+            if (!nextSharedLeadFolders.includes(folder.name)) {
+              nextSharedLeadFolders.push(folder.name);
+            }
+          }
+
+          // Fetch documents inside the shared folder
+          try {
+            const files = await listFilesInFolder(folder.id);
+            const docFiles = files.map((f) => ({
+              name: f.name,
+              url: f.mimeType === 'application/vnd.google-apps.document'
+                ? `https://docs.google.com/document/d/${f.id}/edit`
+                : `https://drive.google.com/file/d/${f.id}/view`,
+              googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+              lead: isProcess ? null : folder.name,
+            }));
+
+            if (isProcess) {
+              setSharedProcessSourceDocs((prev) => ({ ...prev, [folder.name]: docFiles }));
+            } else {
+              setSharedLeadSourceDocs((prev) => ({ ...prev, [folder.name]: docFiles }));
+            }
+          } catch (e) {
+            console.error(`[Drive sync] Failed to list files for shared folder "${folder.name}":`, e);
+          }
+        }
+
+        setSharedLeadFolders(nextSharedLeadFolders);
+        setSharedProcessFolders(nextSharedProcessFolders);
+        setSharedFoldersMap(nextSharedFoldersMap);
+      } catch (err) {
+        console.error('[Drive sync] Shared folders sync failed:', err);
+      }
+
+      // 2. Sync Teammates profiles & permissions
+      if (processRootId) {
+        try {
+          const perms = await getFolderPermissions(processRootId);
+          const profiles = await readTeamProfilesFromDrive();
+          
+          setTeamMembers((prev: any[]) => {
+            const membersMap = new Map<string, any>();
+            prev.forEach((m) => {
+              if (m.email) {
+                membersMap.set(m.email.toLowerCase(), m);
+              }
+            });
+
+            const currentUserEmail = session?.user?.email || localStorage.getItem('user_email') || '';
+
+            perms.forEach((p) => {
+              const emailLower = p.email.toLowerCase();
+              if (emailLower === currentUserEmail.toLowerCase()) return;
+
+              if (!membersMap.has(emailLower)) {
+                membersMap.set(emailLower, {
+                  id: `TM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  name: p.name,
+                  email: p.email,
+                  role: 'Collaborator',
+                  avatar: p.avatar,
+                });
+              }
+            });
+
+            const updatedMembers = Array.from(membersMap.values()).map((m) => {
+              if (m.email) {
+                const profile = profiles[m.email.toLowerCase()];
+                if (profile) {
+                  return {
+                    ...m,
+                    name: profile.name || m.name,
+                    avatar: profile.avatarId != null ? `/${profile.avatarId + 1}.png` : m.avatar,
+                  };
+                }
+              }
+              return m;
+            });
+
+            return updatedMembers;
+          });
+        } catch (e) {
+          console.error('[Drive sync] Failed to sync teammates:', e);
+        }
+      }
     } catch (e) {
       console.error('[Drive sync] Full sync failed:', e);
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [session]);
 
   // --- Team Pool (used by the Executive tab's drag-to-folder Drive sharing) ---
   const [teamMembers, setTeamMembers] = useState<any[]>(() => {
@@ -379,6 +496,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       isSyncing,
       onboardingComplete, setOnboardingComplete,
       userProfile, setUserProfile,
+      sharedLeadFolders, setSharedLeadFolders,
+      sharedProcessFolders, setSharedProcessFolders,
+      sharedLeadSourceDocs, setSharedLeadSourceDocs,
+      sharedProcessSourceDocs, setSharedProcessSourceDocs,
+      sharedFoldersMap, setSharedFoldersMap,
     }}>
       {children}
     </AppContext.Provider>

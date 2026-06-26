@@ -8,12 +8,13 @@ import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
 import { Plus, Mail } from 'lucide-react';
-import { shareFolderWithEmail, revokeFolderAccessForEmail, getFolderIdForView } from '../lib/googleDrive';
+import { shareFolderWithEmail, revokeFolderAccessForEmail, syncFolderStructure } from '../lib/googleDrive';
+import { sendInviteEmail } from '../lib/gmail';
 
 export function Dashboard() {
   const {
     processFolders, leadFolders, folderAccess, setFolderAccess,
-    teamMembers, inviteTeamMember, reportGoogleError,
+    teamMembers, inviteTeamMember, reportGoogleError, session,
   } = useAppContext();
   const [selectedKpi, setSelectedKpi] = useState<KPI | null>(null);
   const [activeGraph, setActiveGraph] = useState<'Qualified Leads' | 'Proposal Acceptance' | 'Closing' | 'Referral'>('Qualified Leads');
@@ -49,7 +50,7 @@ export function Dashboard() {
 
     if (member.email) {
       try {
-        const folderId = await getFolderIdForView(folderView, folderName);
+        const folderId = await syncFolderStructure(folderName, folderView === 'Lead' ? 'LEAD' : 'PROCESS');
         await shareFolderWithEmail(folderId, member.email, 'writer');
       } catch (e) {
         console.error('Failed to share Drive folder:', e);
@@ -71,7 +72,7 @@ export function Dashboard() {
 
     if (member?.email) {
       try {
-        const folderId = await getFolderIdForView(folderView, folderName);
+        const folderId = await syncFolderStructure(folderName, folderView === 'Lead' ? 'LEAD' : 'PROCESS');
         await revokeFolderAccessForEmail(folderId, member.email);
       } catch (e) {
         console.error('Failed to revoke Drive access:', e);
@@ -92,6 +93,18 @@ export function Dashboard() {
     if (!inviteEmail) return;
     setIsInviting(true);
     try {
+      const inviterEmail = session?.user?.email || localStorage.getItem('user_email') || 'A teammate';
+      try {
+        await sendInviteEmail({
+          to: inviteEmail,
+          inviteName: inviteName || 'Teammate',
+          inviterEmail,
+        });
+      } catch (err) {
+        console.error('Failed to send email invite:', err);
+        reportGoogleError?.(err, 'Failed to send email invitation');
+      }
+
       // Just adds them to the team pool. No Drive access is granted here —
       // access is only granted per-folder, via tap-to-assign or drag-and-drop below.
       inviteTeamMember(inviteName || inviteEmail, inviteEmail);

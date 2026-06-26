@@ -362,3 +362,126 @@ export async function listFilesInFolderRecursive(folderId: string): Promise<Arra
   const data = await res.json();
   return (data.files || []).map((f: any) => ({ ...f, parentId: folderId }));
 }
+
+export async function listSharedFolders(): Promise<Array<{ id: string; name: string }>> {
+  try {
+    const token = await ensureValidGoogleToken();
+    // 1. Get folders shared with me directly
+    const query = `mimeType='application/vnd.google-apps.folder' and sharedWithMe=true and trashed=false`;
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=100`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    await checkDriveResponse(res, 'listing shared folders');
+    const data = await res.json();
+    const directFolders = data.files || [];
+    
+    const allFolders: Array<{ id: string; name: string }> = [...directFolders];
+    
+    // 2. For each shared folder, if it is named "PROCESS" or "LEAD", also fetch its subfolders
+    for (const folder of directFolders) {
+      if (folder.name === 'PROCESS' || folder.name === 'LEAD') {
+        try {
+          const subquery = `mimeType='application/vnd.google-apps.folder' and '${folder.id}' in parents and trashed=false`;
+          const subres = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subquery)}&fields=files(id,name)&pageSize=100`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (subres.ok) {
+            const subdata = await subres.json();
+            if (subdata.files) {
+              allFolders.push(...subdata.files);
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to list subfolders of shared root folder "${folder.name}":`, e);
+        }
+      }
+    }
+    
+    return allFolders;
+  } catch (e) {
+    console.error('Failed to list shared folders:', e);
+    return [];
+  }
+}
+
+export async function getFolderPermissions(folderId: string): Promise<Array<{ email: string; name: string; avatar: string }>> {
+  try {
+    const token = await ensureValidGoogleToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress,displayName,photoLink)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    await checkDriveResponse(res, 'loading folder permissions');
+    const data = await res.json();
+    return (data.permissions || [])
+      .filter((p: any) => p.emailAddress)
+      .map((p: any) => ({
+        email: p.emailAddress,
+        name: p.displayName || p.emailAddress.split('@')[0],
+        avatar: p.photoLink || `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(p.emailAddress)}&backgroundColor=transparent`
+      }));
+  } catch (e) {
+    console.error('Failed to get folder permissions:', e);
+    return [];
+  }
+}
+
+export async function updateTeamProfileInDrive(profile: { name: string, avatarId: number | null }) {
+  try {
+    const token = await getGoogleToken();
+    if (!token) return;
+
+    const processRootId = await getRootAppFolder('PROCESS');
+    const files = await listFilesInFolder(processRootId);
+    let profileFile = files.find(f => f.name === 'team_profiles.json');
+
+    let profiles: Record<string, any> = {};
+    if (profileFile) {
+      try {
+        const text = await getFileContent(profileFile.id);
+        profiles = JSON.parse(text);
+      } catch (e) {
+        console.error('Failed to parse existing team profiles:', e);
+      }
+    }
+
+    const email = localStorage.getItem('user_email') || '';
+    if (!email) return;
+
+    profiles[email.toLowerCase()] = {
+      name: profile.name,
+      avatarId: profile.avatarId,
+      updatedAt: Date.now()
+    };
+
+    const content = JSON.stringify(profiles, null, 2);
+    if (profileFile) {
+      await updateFileContent(profileFile.id, content);
+    } else {
+      await uploadToDrive('team_profiles.json', content, processRootId, 'application/json');
+    }
+  } catch (e) {
+    console.error('Failed to update team profile in Drive:', e);
+  }
+}
+
+export async function readTeamProfilesFromDrive(): Promise<Record<string, { name: string, avatarId: number | null }>> {
+  try {
+    const token = await getGoogleToken();
+    if (!token) return {};
+
+    const processRootId = await getRootAppFolder('PROCESS');
+    const files = await listFilesInFolder(processRootId);
+    const profileFile = files.find(f => f.name === 'team_profiles.json');
+
+    if (profileFile) {
+      const text = await getFileContent(profileFile.id);
+      return JSON.parse(text);
+    }
+  } catch (e) {
+    console.error('Failed to read team profiles from Drive:', e);
+  }
+  return {};
+}

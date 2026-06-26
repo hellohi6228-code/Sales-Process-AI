@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/SupabaseClient';
 import { useAppContext } from '../AppContext';
+import { updateTeamProfileInDrive } from '../lib/googleDrive';
 
 // 15 individual PNGs you placed in /public/
 // Vite serves public/ at the root, so the URL is just /1.png, /2.png … /15.png
@@ -63,6 +64,14 @@ export function Onboarding() {
       if (userId) {
         localStorage.setItem(`user_profile_${userId}`, JSON.stringify(profile));
       }
+
+      // Sync to Google Drive
+      try {
+        await updateTeamProfileInDrive({ name: data.name, avatarId: data.avatarId });
+      } catch (err) {
+        console.error('Failed to sync profile to Drive:', err);
+      }
+
       setUserProfile(profile);
       setOnboardingComplete(true);
       navigate('/', { replace: true });

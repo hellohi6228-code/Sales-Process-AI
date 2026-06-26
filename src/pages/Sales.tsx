@@ -23,7 +23,12 @@ export function Sales() {
     leadSourceDocs,
     setLeadSourceDocs,
     reportGoogleError,
+    sharedLeadFolders,
+    sharedLeadSourceDocs,
+    setSharedLeadSourceDocs,
+    sharedFoldersMap,
   } = useAppContext();
+  const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [isContextExpanded, setIsContextExpanded] = useState(false);
@@ -35,12 +40,17 @@ export function Sales() {
 
   const hasAutoSelected = React.useRef(false);
 
+  const activeLeadsList = viewMode === 'shared' ? sharedLeadFolders : leadsList;
+  const activeLeadDocs = viewMode === 'shared'
+    ? sharedLeadSourceDocs[selectedLead || ''] || []
+    : leadSourceDocs[selectedLead || ''] || [];
+
   React.useEffect(() => {
-    if (leadsList.length === 1 && !selectedLead && !hasAutoSelected.current) {
+    if (activeLeadsList.length === 1 && !selectedLead && !hasAutoSelected.current) {
       hasAutoSelected.current = true;
-      setSelectedLead(leadsList[0]);
+      setSelectedLead(activeLeadsList[0]);
     }
-  }, [leadsList, selectedLead]);
+  }, [activeLeadsList, selectedLead]);
 
   React.useEffect(() => {
     setEditingDoc(null);
@@ -54,7 +64,15 @@ export function Sales() {
 
     (async () => {
       try {
-        const folderId = await syncFolderStructure(selectedLead, 'LEAD');
+        const folderId = viewMode === 'shared'
+          ? sharedFoldersMap[selectedLead]
+          : await syncFolderStructure(selectedLead, 'LEAD');
+
+        if (!folderId) {
+          console.warn('[Drive] No folder ID found for shared lead:', selectedLead);
+          return;
+        }
+
         const driveFiles = await listFilesInFolder(folderId);
         // Always replace with latest from Drive so dropped files appear immediately
         const docFiles = driveFiles.map((f) => ({
@@ -65,15 +83,22 @@ export function Sales() {
           googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
         }));
 
-        setLeadSourceDocs((prev: Record<string, any[]>) => ({
-          ...prev,
-          [selectedLead]: docFiles,
-        }));
+        if (viewMode === 'shared') {
+          setSharedLeadSourceDocs((prev: Record<string, any[]>) => ({
+            ...prev,
+            [selectedLead]: docFiles,
+          }));
+        } else {
+          setLeadSourceDocs((prev: Record<string, any[]>) => ({
+            ...prev,
+            [selectedLead]: docFiles,
+          }));
+        }
       } catch (e: any) {
         console.error('[Drive] Failed to load files:', e?.message || e);
       }
     })();
-  }, [selectedLead]);
+  }, [selectedLead, viewMode, sharedFoldersMap]);
 
   const getActiveCards = () => {
     const isMockLead = selectedLead === "Precision Components Inc.";
@@ -118,6 +143,8 @@ export function Sales() {
     try {
       const filesBase64 = attachedFiles.map((f) => f.url);
 
+      const targetSetter = viewMode === 'shared' ? setSharedLeadSourceDocs : setLeadSourceDocs;
+
       if (!selectedLead) {
         // Root context, generating new lead
         const res = await fetch("/api/generate-lead-cards", {
@@ -149,21 +176,25 @@ export function Sales() {
         const googleToken = localStorage.getItem('google_provider_token');
         if (googleToken) {
           try {
-            const folderId = await syncFolderStructure(selectedLead || newLeadName, 'LEAD');
-            for (let i = 0; i < attachedFiles.length; i++) {
-              const f = attachedFiles[i];
-              if (f.url.startsWith("data:")) {
-                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
-                finalDocs[i].googleDocId = driveFile.id;
+            const folderId = viewMode === 'shared'
+              ? sharedFoldersMap[selectedLead || newLeadName]
+              : await syncFolderStructure(selectedLead || newLeadName, 'LEAD');
+            if (folderId) {
+              for (let i = 0; i < attachedFiles.length; i++) {
+                const f = attachedFiles[i];
+                if (f.url.startsWith("data:")) {
+                  const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                  finalDocs[i].googleDocId = driveFile.id;
+                }
               }
-            }
-            if (contextInput) {
-               const driveFile = await createGoogleDocFromText(`${selectedLead || newLeadName} Context Summary`, contextInput, folderId);
-               finalDocs.push({
-                 name: `${selectedLead || newLeadName} Context Summary`,
-                 url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
-                 googleDocId: driveFile.id
-               } as any);
+              if (contextInput) {
+                 const driveFile = await createGoogleDocFromText(`${selectedLead || newLeadName} Context Summary`, contextInput, folderId);
+                 finalDocs.push({
+                   name: `${selectedLead || newLeadName} Context Summary`,
+                   url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                   googleDocId: driveFile.id
+                 } as any);
+              }
             }
           } catch (e) {
             console.error("Failed to sync to Google Drive:", e);
@@ -172,7 +203,7 @@ export function Sales() {
         }
 
         if (finalDocs.length > 0) {
-          setLeadSourceDocs((prev: Record<string, any[]>) => {
+          targetSetter((prev: Record<string, any[]>) => {
             const existingDocs = prev[selectedLead || newLeadName] || [];
             const merged = [...existingDocs];
             for (const doc of finalDocs) {
@@ -219,21 +250,25 @@ export function Sales() {
         const googleToken = localStorage.getItem('google_provider_token');
         if (googleToken) {
           try {
-            const folderId = await syncFolderStructure(selectedLead, 'LEAD');
-            for (let i = 0; i < attachedFiles.length; i++) {
-              const f = attachedFiles[i];
-              if (f.url.startsWith("data:")) {
-                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
-                finalDocs[i].googleDocId = driveFile.id;
+            const folderId = viewMode === 'shared'
+              ? sharedFoldersMap[selectedLead]
+              : await syncFolderStructure(selectedLead, 'LEAD');
+            if (folderId) {
+              for (let i = 0; i < attachedFiles.length; i++) {
+                const f = attachedFiles[i];
+                if (f.url.startsWith("data:")) {
+                  const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                  finalDocs[i].googleDocId = driveFile.id;
+                }
               }
-            }
-            if (contextInput) {
-               const driveFile = await createGoogleDocFromText(`Context Add (${new Date().toLocaleString()})`, contextInput, folderId);
-               finalDocs.push({
-                 name: `Context Add (${new Date().toLocaleString()})`,
-                 url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
-                 googleDocId: driveFile.id
-               } as any);
+              if (contextInput) {
+                 const driveFile = await createGoogleDocFromText(`Context Add (${new Date().toLocaleString()})`, contextInput, folderId);
+                 finalDocs.push({
+                   name: `Context Add (${new Date().toLocaleString()})`,
+                   url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                   googleDocId: driveFile.id
+                 } as any);
+              }
             }
           } catch (e) {
             console.error("Failed to sync to Google Drive:", e);
@@ -242,7 +277,7 @@ export function Sales() {
         }
 
         if (finalDocs.length > 0) {
-          setLeadSourceDocs((prev: Record<string, any[]>) => {
+          targetSetter((prev: Record<string, any[]>) => {
             const existingDocs = prev[selectedLead] || [];
             const merged = [...existingDocs];
             for (const doc of finalDocs) {
@@ -334,7 +369,7 @@ export function Sales() {
                           Source Documents
                         </h4>
 
-                        {leadSourceDocs[selectedLead]?.map(
+                        {activeLeadDocs?.map(
                           (doc: any, i: number) => (
                             <div key={i} className="flex flex-col gap-1 w-full mt-2">
                               <button
@@ -354,8 +389,8 @@ export function Sales() {
                           ),
                         )}
 
-                        {(!leadSourceDocs[selectedLead] ||
-                          leadSourceDocs[selectedLead].length === 0) && (
+                        {(!activeLeadDocs ||
+                          activeLeadDocs.length === 0) && (
                           <div className="text-sm text-neutral-500 italic">No documents attached</div>
                         )}
                       </div>
@@ -498,17 +533,40 @@ export function Sales() {
 
   return (
     <div className="pb-20">
-      <div className="flex justify-end mb-8">
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
-        >
-          <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-        </button>
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex bg-white/40 dark:bg-neutral-800/40 backdrop-blur-md rounded-xl p-1 space-x-1 shadow-sm border border-white/40 dark:border-neutral-700">
+          <button
+            onClick={() => { setViewMode('my'); setSelectedLead(null); }}
+            className={cn(
+              "px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center",
+              viewMode === 'my' ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm" : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            My Folders
+          </button>
+          <button
+            onClick={() => { setViewMode('shared'); setSelectedLead(null); }}
+            className={cn(
+              "px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center",
+              viewMode === 'shared' ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm" : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            Shared with me
+          </button>
+        </div>
+
+        {viewMode === 'my' && (
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
+          >
+            <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {leadsList.map((lead) => (
+        {activeLeadsList.map((lead) => (
           <button
             key={lead}
             onClick={() => setSelectedLead(lead)}
