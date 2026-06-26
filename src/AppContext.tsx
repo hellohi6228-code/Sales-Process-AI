@@ -247,23 +247,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const reconnectGoogle = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          skipBrowserRedirect: true,
+          redirectTo: window.location.href, // return to current page after reconnect
           scopes: GOOGLE_OAUTH_SCOPES,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-          }
-        }
+          },
+        },
       });
       if (error) {
         setNotification({ type: 'error', title: 'Reconnect failed', message: error.message });
-        return;
-      }
-      if (data?.url) {
-        window.open(data.url, 'oauth_popup', 'width=600,height=700');
       }
     } catch (err: any) {
       setNotification({ type: 'error', title: 'Reconnect failed', message: err.message });
@@ -308,19 +304,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       syncProfile(session);
+
       if (session?.provider_token) {
+        // Store the token immediately — this is the only moment Supabase
+        // exposes provider_token (on the SIGNED_IN event after OAuth redirect).
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
         setNotification(null);
-        // Eagerly init folders on every fresh token (covers OAuth popup callback
-        // and token refresh). initDriveFolders is idempotent so this is safe.
+      }
+
+      // On a fresh Google sign-in, initialize Drive folders right away.
+      // We check event === 'SIGNED_IN' so we don't re-run on every token refresh.
+      if (event === 'SIGNED_IN' && session?.provider_token) {
         initializeDefaultProcessFolders(initialProcessFolders)
           .then(() => syncDriveToState())
-          .catch((e) => console.error('Drive init on auth change failed:', e));
+          .catch((e) => console.error('[Drive] init on SIGNED_IN failed:', e));
       }
     });
 
@@ -333,11 +335,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [googleToken, initDriveFolders]);
 
-  useEffect(() => {
-    if (window.opener && session) {
-      window.close();
-    }
-  }, [session]);
 
   if (loadingSession) {
     return <div className="h-screen w-screen flex items-center justify-center dark:bg-[#09090b] dark:text-neutral-100">Loading...</div>;
