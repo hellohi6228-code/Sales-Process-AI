@@ -124,6 +124,8 @@ export async function initializeDefaultProcessFolders(folders: string[]) {
   for (const folder of folders) {
     await findOrCreateFolder(folder, processRootId);
   }
+  // Create the LEAD root folder as well
+  await getRootAppFolder('LEAD');
 }
 
 export async function uploadBase64ToDrive(filename: string, base64Url: string, folderId: string) {

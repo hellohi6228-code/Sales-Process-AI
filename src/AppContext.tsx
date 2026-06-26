@@ -286,6 +286,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
+      } else {
+        const storedToken = localStorage.getItem('google_provider_token');
+        if (storedToken) setGoogleToken(storedToken);
       }
       setLoadingSession(false);
     });
@@ -300,6 +303,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
         setNotification(null);
+      } else {
+        const storedToken = localStorage.getItem('google_provider_token');
+        if (storedToken) {
+          setGoogleToken(storedToken);
+          setNotification(null);
+        }
       }
     });
 
