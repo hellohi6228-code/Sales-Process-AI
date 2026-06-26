@@ -12,14 +12,15 @@ export function SignUp() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   
-  const { session } = useAppContext();
+  const { session, onboardingComplete } = useAppContext();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (session) {
-      navigate('/', { replace: true });
+      // New users (onboarding not complete) → onboarding; returning users → app
+      navigate(onboardingComplete ? '/' : '/onboarding', { replace: true });
     }
-  }, [session, navigate]);
+  }, [session, onboardingComplete, navigate]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +38,7 @@ export function SignUp() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: `${window.location.origin}/onboarding`,
         },
       });
 
