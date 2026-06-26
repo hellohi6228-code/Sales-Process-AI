@@ -194,27 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  /**
-   * Attempts to initialize Google Drive folders.
-   * Safe to call multiple times — findOrCreateFolder is idempotent.
-   */
-  const initDriveFolders = useCallback(async () => {
-    const token = localStorage.getItem('google_provider_token');
-    console.log('[Drive] initDriveFolders called, hasToken:', !!token);
-    if (!token) { console.warn('[Drive] initDriveFolders: no token, skipping'); return; }
-    try {
-      console.log('[Drive] calling initializeDefaultProcessFolders...');
-      await initializeDefaultProcessFolders(initialProcessFolders);
-      console.log('[Drive] initializeDefaultProcessFolders complete, syncing state...');
-      await syncDriveToState();
-      console.log('[Drive] syncDriveToState complete');
-    } catch (e) {
-      console.error('[Drive] initDriveFolders failed:', e);
-      reportGoogleError(e, 'Failed to set up Google Drive folders');
-    }
-  }, [syncDriveToState]);
-
-
+  /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
   const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
     if (error instanceof GoogleDriveError) {
       if (error.code === 'GOOGLE_NOT_CONNECTED') {
@@ -251,19 +231,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const reconnectGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.href, // return to current page after reconnect
+          skipBrowserRedirect: true,
           scopes: GOOGLE_OAUTH_SCOPES,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-          },
-        },
+          }
+        }
       });
       if (error) {
         setNotification({ type: 'error', title: 'Reconnect failed', message: error.message });
+        return;
+      }
+      if (data?.url) {
+        window.open(data.url, 'oauth_popup', 'width=600,height=700');
       }
     } catch (err: any) {
       setNotification({ type: 'error', title: 'Reconnect failed', message: err.message });
@@ -296,40 +280,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[Auth] getSession:', { hasSession: !!session, hasProviderToken: !!session?.provider_token, storedToken: !!localStorage.getItem('google_provider_token') });
       setSession(session);
       syncProfile(session);
       if (session?.provider_token) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
-        console.log('[Auth] getSession: stored provider_token');
       }
       setLoadingSession(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[Auth] onAuthStateChange:', { event, hasSession: !!session, hasProviderToken: !!session?.provider_token, storedToken: !!localStorage.getItem('google_provider_token') });
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       syncProfile(session);
-
       if (session?.provider_token) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
         setNotification(null);
-        console.log('[Auth] stored provider_token to localStorage');
-      }
-
-      if (event === 'SIGNED_IN' && session?.provider_token) {
-        console.log('[Drive] SIGNED_IN with token — starting folder init...');
-        initializeDefaultProcessFolders(initialProcessFolders)
-          .then(() => { console.log('[Drive] folders created, syncing...'); return syncDriveToState(); })
-          .catch((e) => console.error('[Drive] init failed:', e));
-      } else if (event === 'SIGNED_IN') {
-        console.warn('[Drive] SIGNED_IN but NO provider_token — THIS IS THE BUG if you see this.');
       }
     });
 
@@ -338,10 +308,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (googleToken) {
-      initDriveFolders();
+      // Initialize default process folder structure in Drive
+      initializeDefaultProcessFolders(initialProcessFolders).catch((e) => {
+        console.error('Failed to initialize Google Drive folders:', e);
+        reportGoogleError(e, 'Failed to set up Google Drive folders');
+      });
+      // Sync all existing Drive files to app state
+      syncDriveToState();
     }
-  }, [googleToken, initDriveFolders]);
+  }, [googleToken]);
 
+  useEffect(() => {
+    if (window.opener && session) {
+      window.close();
+    }
+  }, [session]);
 
   if (loadingSession) {
     return <div className="h-screen w-screen flex items-center justify-center dark:bg-[#09090b] dark:text-neutral-100">Loading...</div>;
