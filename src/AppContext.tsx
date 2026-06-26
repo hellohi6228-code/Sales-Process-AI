@@ -266,8 +266,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Helper: sync profile from Supabase user metadata into local state + localStorage
+    const syncProfile = (session: any) => {
+      if (!session?.user) return;
+      const meta = session.user.user_metadata ?? {};
+      // Merge with any existing localStorage data (localStorage wins for fields set locally)
+      let local: any = {};
+      try { local = JSON.parse(localStorage.getItem('user_profile') ?? '{}'); } catch {}
+      const merged = { ...meta, ...local };
+      // If Supabase says onboarding is complete, trust it (handles cross-device / re-login)
+      if (meta.onboarding_complete === true) {
+        merged.onboarding_complete = true;
+      }
+      localStorage.setItem('user_profile', JSON.stringify(merged));
+      setUserProfile(merged);
+      if (merged.onboarding_complete === true) {
+        setOnboardingComplete(true);
+      }
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      syncProfile(session);
       if (session?.provider_token) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
@@ -280,6 +300,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      syncProfile(session);
       if (session?.provider_token) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
