@@ -34,7 +34,7 @@ export function SignUp() {
     setError('');
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -44,6 +44,8 @@ export function SignUp() {
 
       if (error) {
         setError(error.message);
+      } else if (data?.session) {
+        setMessage('Sign up successful! Logging in...');
       } else {
         setMessage('Check your email for the confirmation link.');
       }

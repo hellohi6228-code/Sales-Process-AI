@@ -31,7 +31,7 @@ interface OnboardingData {
 }
 
 export function Onboarding() {
-  const { setOnboardingComplete, setUserProfile } = useAppContext();
+  const { setOnboardingComplete, setUserProfile, session } = useAppContext();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -59,7 +59,10 @@ export function Onboarding() {
       // Persist to Supabase user metadata (survives logout/login)
       await supabase.auth.updateUser({ data: profile });
       // Also write to localStorage for instant reads without a network call
-      localStorage.setItem('user_profile', JSON.stringify(profile));
+      const userId = session?.user?.id;
+      if (userId) {
+        localStorage.setItem(`user_profile_${userId}`, JSON.stringify(profile));
+      }
       setUserProfile(profile);
       setOnboardingComplete(true);
       navigate('/', { replace: true });

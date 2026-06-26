@@ -11,7 +11,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { session, syncDriveToState, isSyncing } = useAppContext();
+  const { session, syncDriveToState, isSyncing, userProfile } = useAppContext();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -73,7 +73,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                  className="h-10 w-10 rounded-xl overflow-hidden border border-white/60 dark:border-white/10 bg-white/50 dark:bg-neutral-800/50 shadow-sm backdrop-blur-md p-1 transition-all hover:scale-105 cursor-pointer"
                >
                   <img
-                    src="https://api.dicebear.com/9.x/notionists/svg?seed=Felix&backgroundColor=transparent"
+                    src={userProfile?.avatar_id != null ? `/${userProfile.avatar_id + 1}.png` : "https://api.dicebear.com/9.x/notionists/svg?seed=Felix&backgroundColor=transparent"}
                     alt="User avatar"
                     className="h-full w-full object-contain"
                   />

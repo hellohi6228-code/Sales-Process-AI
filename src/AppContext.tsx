@@ -35,19 +35,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [loadingSession, setLoadingSession] = useState(true);
 
   // ── ONBOARDING STATE ──
-  const [onboardingComplete, setOnboardingComplete] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('user_profile');
-      return saved ? JSON.parse(saved)?.onboarding_complete === true : false;
-    } catch { return false; }
-  });
-
-  const [userProfile, setUserProfile] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem('user_profile');
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean>(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
 
   const [processFolders, setProcessFolders] = useState<string[]>(initialProcessFolders);
@@ -268,21 +257,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Helper: sync profile from Supabase user metadata into local state + localStorage
     const syncProfile = (session: any) => {
-      if (!session?.user) return;
+      if (!session?.user) {
+        setUserProfile(null);
+        setOnboardingComplete(false);
+        return;
+      }
+      const userId = session.user.id;
       const meta = session.user.user_metadata ?? {};
-      // Merge with any existing localStorage data (localStorage wins for fields set locally)
+      // Merge with any existing localStorage data for this specific user
       let local: any = {};
-      try { local = JSON.parse(localStorage.getItem('user_profile') ?? '{}'); } catch {}
+      try { local = JSON.parse(localStorage.getItem(`user_profile_${userId}`) ?? '{}'); } catch {}
       const merged = { ...meta, ...local };
       // If Supabase says onboarding is complete, trust it (handles cross-device / re-login)
       if (meta.onboarding_complete === true) {
         merged.onboarding_complete = true;
       }
-      localStorage.setItem('user_profile', JSON.stringify(merged));
+      localStorage.setItem(`user_profile_${userId}`, JSON.stringify(merged));
+      // Clean up legacy key if it exists
+      localStorage.removeItem('user_profile');
       setUserProfile(merged);
-      if (merged.onboarding_complete === true) {
-        setOnboardingComplete(true);
-      }
+      setOnboardingComplete(merged.onboarding_complete === true);
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {

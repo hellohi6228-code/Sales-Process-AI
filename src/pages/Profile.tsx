@@ -3,44 +3,30 @@ import { supabase } from '../lib/SupabaseClient';
 import { useAppContext } from '../AppContext';
 
 // Mirror of the AVATARS constant from Onboarding.tsx
-const AVATARS = [
-  { id: 0, col: 0, row: 0 }, { id: 1, col: 1, row: 0 }, { id: 2, col: 2, row: 0 },
-  { id: 3, col: 3, row: 0 }, { id: 4, col: 4, row: 0 }, { id: 5, col: 0, row: 1 },
-  { id: 6, col: 1, row: 1 }, { id: 7, col: 2, row: 1 }, { id: 8, col: 3, row: 1 },
-  { id: 9, col: 4, row: 1 }, { id: 10, col: 0, row: 2 }, { id: 11, col: 1, row: 2 },
-  { id: 12, col: 2, row: 2 }, { id: 13, col: 3, row: 2 }, { id: 14, col: 4, row: 2 },
-];
+const AVATARS = Array.from({ length: 15 }, (_, i) => ({
+  id: i,
+  src: `/${i + 1}.png`,
+}));
 
 function AvatarDisplay({ avatarId, size = 72 }: { avatarId: number | null | undefined; size?: number }) {
-  const CELL_W = 213;
-  const CELL_H = 212;
-  const scale = size / CELL_W;
-  const av = AVATARS.find((a) => a.id === avatarId) ?? AVATARS[0];
+  const src = avatarId != null ? `/${avatarId + 1}.png` : `/1.png`;
 
   return (
     <div
       className="rounded-full overflow-hidden ring-2 ring-neutral-200 dark:ring-neutral-700 flex-shrink-0"
       style={{ width: size, height: size }}
     >
-      <div
-        style={{
-          width: size,
-          height: size,
-          backgroundImage: `url('/avatar_assets.png')`,
-          backgroundSize: `${5 * CELL_W * scale}px ${3 * CELL_H * scale}px`,
-          backgroundPosition: `${-av.col * CELL_W * scale}px ${-av.row * CELL_H * scale}px`,
-          backgroundRepeat: 'no-repeat',
-        }}
+      <img
+        src={src}
+        alt="Avatar"
+        className="w-full h-full object-cover"
       />
     </div>
   );
 }
 
 function AvatarPicker({ selected, onSelect }: { selected: number | null; onSelect: (id: number) => void }) {
-  const CELL_W = 213;
-  const CELL_H = 212;
   const DISPLAY = 52;
-  const scale = DISPLAY / CELL_W;
 
   return (
     <div className="grid grid-cols-5 gap-2">
@@ -49,6 +35,7 @@ function AvatarPicker({ selected, onSelect }: { selected: number | null; onSelec
         return (
           <button
             key={av.id}
+            type="button"
             onClick={() => onSelect(av.id)}
             className={`relative rounded-xl overflow-hidden transition-all active:scale-95 ${
               isSelected
@@ -57,15 +44,10 @@ function AvatarPicker({ selected, onSelect }: { selected: number | null; onSelec
             }`}
             style={{ width: DISPLAY, height: DISPLAY }}
           >
-            <div
-              style={{
-                width: DISPLAY,
-                height: DISPLAY,
-                backgroundImage: `url('/avatar_assets.png')`,
-                backgroundSize: `${5 * CELL_W * scale}px ${3 * CELL_H * scale}px`,
-                backgroundPosition: `${-av.col * CELL_W * scale}px ${-av.row * CELL_H * scale}px`,
-                backgroundRepeat: 'no-repeat',
-              }}
+            <img
+              src={av.src}
+              alt={`Avatar ${av.id + 1}`}
+              className="w-full h-full object-cover"
             />
             {isSelected && (
               <div className="absolute inset-0 flex items-center justify-center bg-neutral-900/20">
@@ -95,8 +77,10 @@ export function Profile() {
 
   useEffect(() => {
     if (session?.user?.email) setEmail(session.user.email);
+    const userId = session?.user?.id;
     const profile = userProfile ?? (() => {
-      try { return JSON.parse(localStorage.getItem('user_profile') ?? '{}'); } catch { return {}; }
+      if (!userId) return {};
+      try { return JSON.parse(localStorage.getItem(`user_profile_${userId}`) ?? '{}'); } catch { return {}; }
     })();
     if (profile?.full_name) setFullName(profile.full_name);
     if (profile?.avatar_id != null) setAvatarId(profile.avatar_id);
@@ -129,7 +113,10 @@ export function Profile() {
       const { error } = await supabase.auth.updateUser(authUpdates);
       if (error) throw error;
 
-      localStorage.setItem('user_profile', JSON.stringify(profileData));
+      const userId = session?.user?.id;
+      if (userId) {
+        localStorage.setItem(`user_profile_${userId}`, JSON.stringify(profileData));
+      }
       setUserProfile(profileData);
       setMessage('Profile updated successfully.');
       setPassword('');
