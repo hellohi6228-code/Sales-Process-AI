@@ -119,6 +119,11 @@ export async function syncFolderStructure(leadOrProcessName: string, type: 'LEAD
   return findOrCreateFolder(leadOrProcessName, rootId);
 }
 
+export async function syncProcessLeadFolder(processName: string, leadName: string): Promise<string> {
+  const processFolderId = await syncFolderStructure(processName, 'PROCESS');
+  return findOrCreateFolder(leadName, processFolderId);
+}
+
 export async function initializeDefaultProcessFolders(folders: string[]) {
   const processRootId = await getRootAppFolder('PROCESS');
   for (const folder of folders) {

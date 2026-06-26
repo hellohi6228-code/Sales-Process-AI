@@ -20,7 +20,7 @@ import {
 
 const CARDS_BY_PROCESS: Record<string, any[]> = {};
 
-import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder } from "../lib/googleDrive";
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder, syncProcessLeadFolder, findOrCreateFolder } from "../lib/googleDrive";
 
 export function Marketing() {
   const {
@@ -121,12 +121,12 @@ export function Marketing() {
 
     (async () => {
       try {
-        const folderId = viewMode === 'shared'
-          ? sharedFoldersMap[selectedFolder]
-          : await syncFolderStructure(selectedFolder, 'PROCESS');
+        const folderId = selectedFolder === "Positioning" || !selectedActiveLead
+          ? (viewMode === 'shared' ? sharedFoldersMap[selectedFolder] : await syncFolderStructure(selectedFolder, 'PROCESS'))
+          : (viewMode === 'shared' ? await findOrCreateFolder(selectedActiveLead, sharedFoldersMap[selectedFolder]) : await syncProcessLeadFolder(selectedFolder, selectedActiveLead));
 
         if (!folderId) {
-          console.warn('[Drive] No folder ID found for shared process:', selectedFolder);
+          console.warn('[Drive] No folder ID found for process:', selectedFolder);
           return;
         }
 
@@ -155,7 +155,7 @@ export function Marketing() {
         console.error('[Drive] Failed to load files:', e?.message || e);
       }
     })();
-  }, [selectedFolder, viewMode, sharedFoldersMap]);
+  }, [selectedFolder, selectedActiveLead, viewMode, sharedFoldersMap]);
 
   React.useEffect(() => {
     if (selectedFolder && selectedFolder !== "Positioning") {
@@ -358,9 +358,9 @@ export function Marketing() {
       const googleToken = localStorage.getItem('google_provider_token');
       if (googleToken) {
         try {
-          const folderId = viewMode === 'shared'
-            ? sharedFoldersMap[selectedFolder]
-            : await syncFolderStructure(selectedFolder, 'PROCESS');
+          const folderId = selectedFolder === "Positioning" || !selectedActiveLead
+            ? (viewMode === 'shared' ? sharedFoldersMap[selectedFolder] : await syncFolderStructure(selectedFolder, 'PROCESS'))
+            : (viewMode === 'shared' ? await findOrCreateFolder(selectedActiveLead, sharedFoldersMap[selectedFolder]) : await syncProcessLeadFolder(selectedFolder, selectedActiveLead));
 
           if (folderId) {
             for (let i = 0; i < attachedFiles.length; i++) {
