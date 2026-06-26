@@ -120,6 +120,8 @@ export async function syncFolderStructure(leadOrProcessName: string, type: 'LEAD
 }
 
 export async function initializeDefaultProcessFolders(folders: string[]) {
+  // Always ensure both root folders exist, even if there are no subfolders yet
+  await getRootAppFolder('LEAD');
   const processRootId = await getRootAppFolder('PROCESS');
   for (const folder of folders) {
     await findOrCreateFolder(folder, processRootId);
