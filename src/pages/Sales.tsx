@@ -27,6 +27,8 @@ export function Sales() {
     sharedLeadSourceDocs,
     setSharedLeadSourceDocs,
     sharedFoldersMap,
+    leadEmails,
+    setLeadEmail,
   } = useAppContext();
   const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
@@ -331,6 +333,16 @@ export function Sales() {
               <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
                 {selectedLead}
               </h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-500">Client Email:</span>
+                <input
+                  type="email"
+                  value={leadEmails[selectedLead] || ""}
+                  onChange={(e) => setLeadEmail(selectedLead, e.target.value)}
+                  placeholder="Enter email..."
+                  className="bg-transparent border-b border-transparent hover:border-neutral-300 dark:hover:border-neutral-600 focus:border-sky-500 text-xs text-neutral-600 dark:text-neutral-300 focus:outline-none py-0.5 px-1 transition-colors w-52 font-semibold"
+                />
+              </div>
             </div>
           </div>
           <button

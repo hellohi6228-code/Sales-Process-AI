@@ -21,6 +21,7 @@ import {
 const CARDS_BY_PROCESS: Record<string, any[]> = {};
 
 import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder, syncProcessLeadFolder, findOrCreateFolder } from "../lib/googleDrive";
+import { sendProposalEmail } from "../lib/gmail";
 
 export function Marketing() {
   const {
@@ -41,6 +42,13 @@ export function Marketing() {
     setSharedProcessSourceDocs,
     sharedFoldersMap,
     sharedLeadFolders,
+    leadEmails,
+    setLeadEmail,
+    proposalThreads,
+    addProposalThread,
+    threadMessages,
+    syncEmailReplies,
+    isSyncingEmails,
   } = useAppContext();
   const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -61,6 +69,9 @@ export function Marketing() {
   const [isClientActionModalOpen, setIsClientActionModalOpen] = useState(false);
   const [clientFeedback, setClientFeedback] = useState("");
   const [proposalEmail, setProposalEmail] = useState("");
+  const [proposalSubject, setProposalSubject] = useState("");
+  const [proposalBody, setProposalBody] = useState("");
+  const [isSendingProposal, setIsSendingProposal] = useState(false);
 
   const activeProcessFolders = viewMode === 'shared' ? sharedProcessFolders : processFolders;
   const activeProcessDocs = viewMode === 'shared'
@@ -213,6 +224,22 @@ export function Marketing() {
     }
 
     return CARDS_BY_PROCESS[selectedFolder] || [];
+  };
+
+  const getLeadEmailMessages = () => {
+    if (!selectedActiveLead) return [];
+    const leadThreads = proposalThreads[selectedActiveLead] || [];
+    const allMsgs: any[] = [];
+    leadThreads.forEach((t: any) => {
+      const msgs = threadMessages[t.threadId] || [];
+      msgs.forEach((m: any) => {
+        allMsgs.push({
+          ...m,
+          threadSubject: t.subject,
+        });
+      });
+    });
+    return allMsgs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
   const nextCard = () => {
@@ -496,7 +523,16 @@ export function Marketing() {
               <>
                 <button
                   onClick={() => {
-                    setProposalEmail(`${selectedActiveLead.toLowerCase().replace(/[^a-z0-9]/g, '')}@example.com`);
+                    const clientEmail = leadEmails[selectedActiveLead] || "";
+                    setProposalEmail(clientEmail);
+                    setProposalSubject(`Proposal for ${selectedActiveLead} - Sales & Process AI`);
+                    
+                    const pCards = getActiveCards();
+                    const draftBody = `Hi ${selectedActiveLead},\n\nHere is our proposed strategic outline based on our discovery and solution design sessions:\n\n` +
+                      pCards.map((c: any) => `${c.title}:\n${c.text}`).join('\n\n') +
+                      `\n\nWe look forward to discussing the terms with you.\n\nBest regards,\n${session?.user?.email || 'Sales Team'}`;
+                    setProposalBody(draftBody);
+                    
                     setIsSendProposalModalOpen(true);
                   }}
                   className="px-4 h-10 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-full flex items-center justify-center shadow-sm text-sm font-bold hover:bg-neutral-800 transition"
@@ -581,6 +617,83 @@ export function Marketing() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Email Correspondence Timeline */}
+            {(selectedFolder === "Proposal" || selectedFolder === "Objection Handling") && selectedActiveLead && (
+              <div className="w-full mt-6 bg-white/40 dark:bg-neutral-800/40 backdrop-blur-md border border-neutral-200/50 dark:border-neutral-700/50 rounded-3xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4 border-b border-neutral-200/30 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isSyncingEmails ? 'bg-sky-400' : 'bg-green-400'}`}></span>
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${isSyncingEmails ? 'bg-sky-500' : 'bg-green-500'}`}></span>
+                    </span>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
+                      Gmail Proposal Loop
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => syncEmailReplies()}
+                    disabled={isSyncingEmails}
+                    className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {isSyncingEmails ? (
+                      <>
+                        <svg className="animate-spin h-3 w-3 text-sky-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Syncing...
+                      </>
+                    ) : "Check Replies"}
+                  </button>
+                </div>
+
+                <div className="max-h-[300px] overflow-y-auto space-y-3 pr-1">
+                  {getLeadEmailMessages().length === 0 ? (
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500 italic py-2">
+                      No emails sent yet. Use "Send to Client" to begin.
+                    </div>
+                  ) : (
+                    getLeadEmailMessages().map((msg: any) => {
+                      const isMe = msg.isFromMe;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={cn(
+                            "flex flex-col gap-1 max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed shadow-sm",
+                            isMe
+                              ? "ml-auto bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-300/30 dark:border-sky-700/30 text-neutral-800 dark:text-neutral-200"
+                              : "bg-white/80 dark:bg-neutral-800/80 border border-neutral-200/50 dark:border-neutral-700/50 text-neutral-800 dark:text-neutral-200"
+                          )}
+                        >
+                          <div className="flex justify-between items-center gap-4 text-[9px] font-bold text-neutral-400 dark:text-neutral-500 border-b border-neutral-100 dark:border-neutral-700/40 pb-1 mb-1">
+                            <span className="truncate">
+                              {isMe ? "You (Sent)" : msg.from.split("<")[0] || msg.from}
+                            </span>
+                            <span>
+                              {new Date(msg.date).toLocaleDateString() === new Date().toLocaleDateString()
+                                ? new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : new Date(msg.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-neutral-500 dark:text-neutral-400 text-[10px] mb-1 italic truncate">
+                            Re: {msg.threadSubject}
+                          </p>
+                          <div className="whitespace-pre-line text-neutral-700 dark:text-neutral-300">
+                            {msg.snippet || msg.body}
+                          </div>
+                          {!isMe && (
+                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 dark:border-neutral-700/40 flex justify-between items-center text-[9px] text-sky-600 dark:text-sky-400 font-bold">
+                              <span>✓ Fed to Objection Handling</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Center Column */}
@@ -824,6 +937,109 @@ export function Marketing() {
                   {isGenerating ? "Generating..." : "Save"}
                 </button>
               </div>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Send Proposal Modal */}
+        <Modal
+          isOpen={isSendProposalModalOpen}
+          onClose={() => setIsSendProposalModalOpen(false)}
+          title="Send Proposal via Gmail"
+          className="sm:max-w-2xl"
+        >
+          <div className="space-y-6 pt-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Recipient Email
+                </label>
+                <input
+                  type="email"
+                  className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow text-neutral-800 dark:text-neutral-200"
+                  placeholder="client@example.com"
+                  value={proposalEmail}
+                  onChange={(e) => setProposalEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow text-neutral-800 dark:text-neutral-200"
+                  placeholder="Email Subject"
+                  value={proposalSubject}
+                  onChange={(e) => setProposalSubject(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Proposal Body
+                </label>
+                <textarea
+                  className="w-full h-64 p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none transition-shadow text-neutral-800 dark:text-neutral-200 font-sans leading-relaxed"
+                  placeholder="Write proposal email..."
+                  value={proposalBody}
+                  onChange={(e) => setProposalBody(e.target.value)}
+                ></textarea>
+              </div>
+
+              <button
+                disabled={isSendingProposal || !proposalEmail}
+                className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={async () => {
+                  if (!selectedActiveLead) return;
+                  setIsSendingProposal(true);
+                  try {
+                    const formattedHtml = `
+                      <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; background-color: #fff;">
+                        <h2 style="color: #111; margin-top: 0; border-bottom: 2px solid #0284c7; padding-bottom: 8px;">Proposal for ${selectedActiveLead}</h2>
+                        <div style="font-size: 15px; color: #333; line-height: 1.6; white-space: pre-wrap;">
+                          ${proposalBody.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}
+                        </div>
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p style="font-size: 11px; color: #888; text-align: center; margin-bottom: 0;">
+                          Sent via Sales & Process AI Gmail Integration.
+                        </p>
+                      </div>
+                    `;
+
+                    const result = await sendProposalEmail({
+                      to: proposalEmail,
+                      subject: proposalSubject,
+                      bodyHtml: formattedHtml,
+                      leadName: selectedActiveLead,
+                    });
+
+                    addProposalThread(selectedActiveLead, {
+                      threadId: result.threadId,
+                      leadName: selectedActiveLead,
+                      to: proposalEmail,
+                      subject: proposalSubject,
+                      sentAt: new Date().toISOString(),
+                    });
+
+                    setLeadEmail(selectedActiveLead, proposalEmail);
+                    setIsSendProposalModalOpen(false);
+                    alert("Proposal sent successfully via Gmail!");
+                    
+                    setTimeout(() => {
+                      syncEmailReplies();
+                    }, 500);
+                  } catch (e: any) {
+                    console.error(e);
+                    alert(e.message || "Failed to send proposal");
+                  } finally {
+                    setIsSendingProposal(false);
+                  }
+                }}
+              >
+                {isSendingProposal ? "Sending..." : "Send Proposal"}
+              </button>
             </div>
           </div>
         </Modal>

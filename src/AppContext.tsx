@@ -13,6 +13,7 @@ import {
   readTeamProfilesFromDrive,
 } from './lib/googleDrive';
 import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
+import { checkForNewReplies } from './lib/gmail';
 
 const initialProcessFolders = [
   'Positioning', 'Audience', 'Qualifying', 'Discovery', 'Solution Design',
@@ -374,6 +375,123 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  // --- Lead Emails Mapping ---
+  const [leadEmails, setLeadEmails] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('lead_emails');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('lead_emails', JSON.stringify(leadEmails));
+  }, [leadEmails]);
+
+  const setLeadEmail = (leadName: string, email: string) => {
+    setLeadEmails((prev) => ({
+      ...prev,
+      [leadName]: email,
+    }));
+  };
+
+  // --- Gmail Thread Cache (threadId -> messages[]) ---
+  const [threadMessages, setThreadMessages] = useState<Record<string, any[]>>(() => {
+    try {
+      const saved = localStorage.getItem('thread_messages');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('thread_messages', JSON.stringify(threadMessages));
+  }, [threadMessages]);
+
+  const [isSyncingEmails, setIsSyncingEmails] = useState(false);
+
+  const syncEmailReplies = useCallback(async () => {
+    const token = localStorage.getItem('google_provider_token');
+    if (!token) return;
+
+    setIsSyncingEmails(true);
+    try {
+      const allThreads: any[] = [];
+      Object.keys(proposalThreads).forEach((lead) => {
+        allThreads.push(...(proposalThreads[lead] || []));
+      });
+
+      if (allThreads.length === 0) return;
+
+      const threadMessagesMap = await checkForNewReplies(allThreads);
+
+      setThreadMessages((prev) => {
+        const next = { ...prev };
+        Object.keys(threadMessagesMap).forEach((tid) => {
+          next[tid] = threadMessagesMap[tid];
+        });
+        return next;
+      });
+
+      setCustomCardsProcess((prev) => {
+        const next = { ...prev };
+        let updated = false;
+
+        Object.keys(proposalThreads).forEach((lead) => {
+          const leadThreads = proposalThreads[lead] || [];
+          leadThreads.forEach((t: any) => {
+            const messages = threadMessagesMap[t.threadId];
+            if (!messages) return;
+
+            const clientReplies = messages.filter((m: any) => !m.isFromMe);
+
+            clientReplies.forEach((reply: any) => {
+              const existingObjections = next["Objection Handling"] || [];
+              const alreadyLogged = existingObjections.some(
+                (c: any) => c.lead === lead && c.emailMessageId === reply.id
+              );
+
+              if (!alreadyLogged) {
+                const title = `Reply: ${reply.subject || 'Gmail Objection'}`;
+                const text = reply.snippet || reply.body || 'Client reply received via Gmail loop.';
+                
+                const newCard = {
+                  title,
+                  text,
+                  lead,
+                  emailMessageId: reply.id,
+                  date: reply.date,
+                  from: reply.from,
+                  isEmailReply: true,
+                };
+
+                next["Objection Handling"] = [
+                  ...(next["Objection Handling"] || []),
+                  newCard
+                ];
+                updated = true;
+
+                setNotification({
+                  type: 'info',
+                  title: 'New Client Reply Received',
+                  message: `Lead "${lead}" replied: "${reply.snippet || 'Click to view'}"`,
+                });
+              }
+            });
+          });
+        });
+
+        return updated ? next : prev;
+      });
+    } catch (e) {
+      console.error('[Sync Emails] Error fetching replies:', e);
+    } finally {
+      setIsSyncingEmails(false);
+    }
+  }, [proposalThreads]);
+
 
   useEffect(() => {
     // Helper: sync profile from Supabase user metadata into local state + localStorage
@@ -462,6 +580,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [googleToken]);
 
   useEffect(() => {
+    if (googleToken) {
+      syncEmailReplies();
+      const interval = setInterval(() => {
+        syncEmailReplies();
+      }, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [googleToken, syncEmailReplies]);
+
+  useEffect(() => {
     if (window.opener && session) {
       const providerToken = session.provider_token || localStorage.getItem('google_provider_token');
       if (providerToken) {
@@ -501,6 +629,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sharedLeadSourceDocs, setSharedLeadSourceDocs,
       sharedProcessSourceDocs, setSharedProcessSourceDocs,
       sharedFoldersMap, setSharedFoldersMap,
+      leadEmails, setLeadEmail,
+      threadMessages, syncEmailReplies, isSyncingEmails,
     }}>
       {children}
     </AppContext.Provider>
