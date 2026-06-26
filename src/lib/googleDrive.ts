@@ -37,6 +37,7 @@ function isTokenExpired(): boolean {
 
 export async function ensureValidGoogleToken(): Promise<string> {
   const token = await getGoogleToken();
+  console.log('[Drive] ensureValidGoogleToken: hasToken=', !!token, 'expired=', isTokenExpired());
   if (!token) {
     throw new GoogleDriveError('No Google account connected.', 'GOOGLE_NOT_CONNECTED');
   }
@@ -120,12 +121,16 @@ export async function syncFolderStructure(leadOrProcessName: string, type: 'LEAD
 }
 
 export async function initializeDefaultProcessFolders(folders: string[]) {
-  // Always ensure both root folders exist, even if there are no subfolders yet
-  await getRootAppFolder('LEAD');
+  console.log('[Drive] initializeDefaultProcessFolders: creating LEAD root...');
+  const leadRootId = await getRootAppFolder('LEAD');
+  console.log('[Drive] LEAD root id:', leadRootId);
   const processRootId = await getRootAppFolder('PROCESS');
+  console.log('[Drive] PROCESS root id:', processRootId);
   for (const folder of folders) {
-    await findOrCreateFolder(folder, processRootId);
+    const id = await findOrCreateFolder(folder, processRootId);
+    console.log(`[Drive] subfolder "${folder}":`, id);
   }
+  console.log('[Drive] initializeDefaultProcessFolders: done');
 }
 
 export async function uploadBase64ToDrive(filename: string, base64Url: string, folderId: string) {
