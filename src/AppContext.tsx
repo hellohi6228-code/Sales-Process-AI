@@ -200,12 +200,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    */
   const initDriveFolders = useCallback(async () => {
     const token = localStorage.getItem('google_provider_token');
-    if (!token) return;
+    console.log('[Drive] initDriveFolders called, hasToken:', !!token);
+    if (!token) { console.warn('[Drive] initDriveFolders: no token, skipping'); return; }
     try {
+      console.log('[Drive] calling initializeDefaultProcessFolders...');
       await initializeDefaultProcessFolders(initialProcessFolders);
+      console.log('[Drive] initializeDefaultProcessFolders complete, syncing state...');
       await syncDriveToState();
+      console.log('[Drive] syncDriveToState complete');
     } catch (e) {
-      console.error('Failed to initialize Google Drive folders:', e);
+      console.error('[Drive] initDriveFolders failed:', e);
       reportGoogleError(e, 'Failed to set up Google Drive folders');
     }
   }, [syncDriveToState]);
@@ -292,12 +296,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[Auth] getSession:', { hasSession: !!session, hasProviderToken: !!session?.provider_token, storedToken: !!localStorage.getItem('google_provider_token') });
       setSession(session);
       syncProfile(session);
       if (session?.provider_token) {
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
+        console.log('[Auth] getSession: stored provider_token');
       }
       setLoadingSession(false);
     });
@@ -305,24 +311,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[Auth] onAuthStateChange:', { event, hasSession: !!session, hasProviderToken: !!session?.provider_token, storedToken: !!localStorage.getItem('google_provider_token') });
       setSession(session);
       syncProfile(session);
 
       if (session?.provider_token) {
-        // Store the token immediately — this is the only moment Supabase
-        // exposes provider_token (on the SIGNED_IN event after OAuth redirect).
         localStorage.setItem('google_provider_token', session.provider_token);
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
         setNotification(null);
+        console.log('[Auth] stored provider_token to localStorage');
       }
 
-      // On a fresh Google sign-in, initialize Drive folders right away.
-      // We check event === 'SIGNED_IN' so we don't re-run on every token refresh.
       if (event === 'SIGNED_IN' && session?.provider_token) {
+        console.log('[Drive] SIGNED_IN with token — starting folder init...');
         initializeDefaultProcessFolders(initialProcessFolders)
-          .then(() => syncDriveToState())
-          .catch((e) => console.error('[Drive] init on SIGNED_IN failed:', e));
+          .then(() => { console.log('[Drive] folders created, syncing...'); return syncDriveToState(); })
+          .catch((e) => console.error('[Drive] init failed:', e));
+      } else if (event === 'SIGNED_IN') {
+        console.warn('[Drive] SIGNED_IN but NO provider_token — THIS IS THE BUG if you see this.');
       }
     });
 
