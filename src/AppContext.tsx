@@ -194,7 +194,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
+  /**
+   * Attempts to initialize Google Drive folders.
+   * Safe to call multiple times — findOrCreateFolder is idempotent.
+   */
+  const initDriveFolders = useCallback(async () => {
+    const token = localStorage.getItem('google_provider_token');
+    if (!token) return;
+    try {
+      await initializeDefaultProcessFolders(initialProcessFolders);
+      await syncDriveToState();
+    } catch (e) {
+      console.error('Failed to initialize Google Drive folders:', e);
+      reportGoogleError(e, 'Failed to set up Google Drive folders');
+    }
+  }, [syncDriveToState]);
+
+
   const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
     if (error instanceof GoogleDriveError) {
       if (error.code === 'GOOGLE_NOT_CONNECTED') {
@@ -300,6 +316,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         recordGoogleTokenObtained();
         setGoogleToken(session.provider_token);
         setNotification(null);
+        // Eagerly init folders on every fresh token (covers OAuth popup callback
+        // and token refresh). initDriveFolders is idempotent so this is safe.
+        initializeDefaultProcessFolders(initialProcessFolders)
+          .then(() => syncDriveToState())
+          .catch((e) => console.error('Drive init on auth change failed:', e));
       }
     });
 
@@ -308,15 +329,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (googleToken) {
-      // Initialize default process folder structure in Drive
-      initializeDefaultProcessFolders(initialProcessFolders).catch((e) => {
-        console.error('Failed to initialize Google Drive folders:', e);
-        reportGoogleError(e, 'Failed to set up Google Drive folders');
-      });
-      // Sync all existing Drive files to app state
-      syncDriveToState();
+      initDriveFolders();
     }
-  }, [googleToken]);
+  }, [googleToken, initDriveFolders]);
 
   useEffect(() => {
     if (window.opener && session) {
