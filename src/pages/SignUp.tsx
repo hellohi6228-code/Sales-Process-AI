@@ -4,9 +4,6 @@ import { motion } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../AppContext';
 
-const GOOGLE_OAUTH_SCOPES =
-  'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify';
-
 export function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +17,7 @@ export function SignUp() {
 
   useEffect(() => {
     if (session) {
+      // New users (onboarding not complete) → onboarding; returning users → app
       navigate(onboardingComplete ? '/' : '/onboarding', { replace: true });
     }
   }, [session, onboardingComplete, navigate]);
@@ -58,23 +56,23 @@ export function SignUp() {
     }
   };
 
-  // Use a full-page redirect (same as Login) so Supabase can deliver the
-  // provider_token to the main window on return. The popup approach loses
-  // the token because the popup closes before the parent can read it.
   const handleOAuthLogin = async (provider: 'google') => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/onboarding`,
-          scopes: GOOGLE_OAUTH_SCOPES,
+          skipBrowserRedirect: true,
+          scopes: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify',
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-          },
-        },
+          }
+        }
       });
       if (error) setError(error.message);
+      if (data?.url) {
+        window.open(data.url, 'oauth_popup', 'width=600,height=700');
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred during sign up');
     }
