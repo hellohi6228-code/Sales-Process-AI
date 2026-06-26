@@ -56,13 +56,76 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notification, setNotification] = useState<Notification | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
+  const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
+    if (error instanceof GoogleDriveError) {
+      if (error.code === 'GOOGLE_NOT_CONNECTED') {
+        setNotification({
+          type: 'warning',
+          title: 'Not connected to Google',
+          message: 'Connect your Google account to sync documents to Drive.',
+          showReconnect: true,
+        });
+        return;
+      }
+      if (error.code === 'GOOGLE_TOKEN_EXPIRED') {
+        setNotification({
+          type: 'warning',
+          title: 'Google session expired',
+          message: 'Please reconnect your Google account to continue syncing.',
+          showReconnect: true,
+        });
+        return;
+      }
+      setNotification({
+        type: 'error',
+        title: fallbackTitle,
+        message: error.message,
+      });
+      return;
+    }
+    setNotification({
+      type: 'error',
+      title: fallbackTitle,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  };
+
+  const reconnectGoogle = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          skipBrowserRedirect: true,
+          scopes: GOOGLE_OAUTH_SCOPES,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+      if (error) {
+        setNotification({ type: 'error', title: 'Reconnect failed', message: error.message });
+        return;
+      }
+      if (data?.url) {
+        window.open(data.url, 'oauth_popup', 'width=600,height=700');
+      }
+    } catch (err: any) {
+      setNotification({ type: 'error', title: 'Reconnect failed', message: err.message });
+    }
+  };
+
   /**
    * Scans Google Drive for existing LEAD and PROCESS folders/files
    * and populates React state. Called on login and can be triggered manually.
    */
   const syncDriveToState = useCallback(async () => {
     const token = localStorage.getItem('google_provider_token');
-    if (!token) return;
+    if (!token) {
+      reconnectGoogle();
+      return;
+    }
     setIsSyncing(true);
     try {
       // Sync LEAD folders
@@ -194,65 +257,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
-  const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
-    if (error instanceof GoogleDriveError) {
-      if (error.code === 'GOOGLE_NOT_CONNECTED') {
-        setNotification({
-          type: 'warning',
-          title: 'Not connected to Google',
-          message: 'Connect your Google account to sync documents to Drive.',
-          showReconnect: true,
-        });
-        return;
-      }
-      if (error.code === 'GOOGLE_TOKEN_EXPIRED') {
-        setNotification({
-          type: 'warning',
-          title: 'Google session expired',
-          message: 'Please reconnect your Google account to continue syncing.',
-          showReconnect: true,
-        });
-        return;
-      }
-      setNotification({
-        type: 'error',
-        title: fallbackTitle,
-        message: error.message,
-      });
-      return;
-    }
-    setNotification({
-      type: 'error',
-      title: fallbackTitle,
-      message: error instanceof Error ? error.message : String(error),
-    });
-  };
-
-  const reconnectGoogle = async () => {
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          skipBrowserRedirect: true,
-          scopes: GOOGLE_OAUTH_SCOPES,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
-        }
-      });
-      if (error) {
-        setNotification({ type: 'error', title: 'Reconnect failed', message: error.message });
-        return;
-      }
-      if (data?.url) {
-        window.open(data.url, 'oauth_popup', 'width=600,height=700');
-      }
-    } catch (err: any) {
-      setNotification({ type: 'error', title: 'Reconnect failed', message: err.message });
-    }
-  };
 
   useEffect(() => {
     // Helper: sync profile from Supabase user metadata into local state + localStorage
@@ -312,7 +316,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GOOGLE_OAUTH_SUCCESS' && event.data?.token) {
+        localStorage.setItem('google_provider_token', event.data.token);
+        recordGoogleTokenObtained();
+        setGoogleToken(event.data.token);
+        setNotification(null);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   useEffect(() => {
@@ -329,6 +346,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (window.opener && session) {
+      const providerToken = session.provider_token || localStorage.getItem('google_provider_token');
+      if (providerToken) {
+        window.opener.postMessage({ type: 'GOOGLE_OAUTH_SUCCESS', token: providerToken }, '*');
+      }
       window.close();
     }
   }, [session]);
