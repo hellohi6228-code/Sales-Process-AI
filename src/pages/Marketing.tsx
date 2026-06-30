@@ -253,11 +253,11 @@ export function Marketing() {
       case "Closing":
         return "Add closing remark and context for future opportunities <-> synth to lead";
       case "Objection Handling":
-        return "Add relevant context";
+        return "Add relevant context <-> synth to lead";
       case "Onboarding":
-        return "Add relevant context";
+        return "Add relevant context <-> synth to lead";
       case "Referral":
-        return "Add relevant context";
+        return "Add relevant context <-> synth to lead";
       default:
         return "Add relevant context";
     }
@@ -475,6 +475,22 @@ export function Marketing() {
                 lead: selectedActiveLead,
                 googleDocId: driveFile.id
               } as any);
+
+              // ALSO sync context to Lead's Input Context if in Discovery, Closing, Objection Handling, Onboarding, Referral
+              const synthToLeadStages = ["Discovery", "Closing", "Objection Handling", "Onboarding", "Referral"];
+              if (synthToLeadStages.includes(selectedFolder) && selectedActiveLead) {
+                try {
+                  const leadFolderId = viewMode === 'shared'
+                    ? sharedFoldersMap[selectedActiveLead]
+                    : await syncFolderStructure(selectedActiveLead, 'LEAD');
+                  if (leadFolderId) {
+                    const leadInputContextId = await findOrCreateFolder("Input Context", leadFolderId);
+                    await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, leadInputContextId);
+                  }
+                } catch (err) {
+                  console.error("Failed to automatically synchronize context to Lead Input Context folder:", err);
+                }
+              }
             }
 
             // Sync Gmail interactions to Input Context folder if Discovery stage
