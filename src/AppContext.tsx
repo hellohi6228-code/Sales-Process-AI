@@ -45,8 +45,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [processFolders, setProcessFolders] = useState<string[]>(initialProcessFolders);
   const [leadFolders, setLeadFolders] = useState<string[]>(initialLeadFolders);
-  const [customCardsProcess, setCustomCardsProcess] = useState<Record<string, any[]>>({});
-  const [customCardsLead, setCustomCardsLead] = useState<Record<string, any[]>>({});
+  const [customCardsProcess, setCustomCardsProcess] = useState<Record<string, any[]>>(() => {
+    try {
+      const saved = localStorage.getItem('custom_cards_process');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('custom_cards_process', JSON.stringify(customCardsProcess));
+  }, [customCardsProcess]);
+
+  const [customCardsLead, setCustomCardsLead] = useState<Record<string, any[]>>(() => {
+    try {
+      const saved = localStorage.getItem('custom_cards_lead');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('custom_cards_lead', JSON.stringify(customCardsLead));
+  }, [customCardsLead]);
   const [folderAccess, setFolderAccess] = useState<Record<string, Record<string, string[]>>>({
     'Process': {},
     'Lead': {}

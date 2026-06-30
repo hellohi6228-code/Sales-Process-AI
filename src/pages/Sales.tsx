@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronLeft, FolderOpen, FileText, Plus, X } from "lucide-react";
+import { ChevronLeft, FolderOpen, FileText, Plus, X, Pencil } from "lucide-react";
 import { cn } from "../lib/utils";
 import { Modal } from "../components/ui/Modal";
 import { useAppContext } from "../AppContext";
@@ -39,6 +39,10 @@ export function Sales() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<FileData[]>([]);
   const [editingDoc, setEditingDoc] = useState<any>(null); // { name: string, url: string }
+  const [isEditingCard, setIsEditingCard] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editText, setEditText] = useState("");
+  const [editScore, setEditScore] = useState("");
 
   const hasAutoSelected = React.useRef(false);
 
@@ -56,7 +60,8 @@ export function Sales() {
 
   React.useEffect(() => {
     setEditingDoc(null);
-  }, [selectedLead]);
+    setIsEditingCard(false);
+  }, [selectedLead, cardIndex]);
 
   // Load existing Drive files when a lead folder is opened
   React.useEffect(() => {
@@ -432,7 +437,7 @@ export function Sales() {
                 "w-full max-w-sm aspect-[3/4] rounded-[32px] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.06)] flex flex-col relative overflow-hidden",
                 "bg-white/80 dark:bg-neutral-800/90 backdrop-blur-xl border border-white dark:border-neutral-700",
               )}
-              drag="x"
+              drag={isEditingCard ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
               onDragEnd={(e, { offset, velocity }) => {
                 const swipe = offset.x;
@@ -444,23 +449,110 @@ export function Sales() {
 
               <div className="flex justify-between items-center mb-6">
                 <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                  Insight
+                  {isEditingCard ? "Edit Insight" : "Insight"}
                 </div>
-                {cards[cardIndex]?.score && (
-                  <div className="flex items-end gap-1 font-black text-neutral-900 dark:text-neutral-100 text-2xl">
-                    <span className="text-xs font-bold uppercase mb-1 text-neutral-400 pt-0.5">
-                      Score
-                    </span>{" "}
-                    {cards[cardIndex].score}
+                {!isEditingCard ? (
+                  <div className="flex items-center gap-3">
+                    {cards[cardIndex]?.score && (
+                      <div className="flex items-end gap-1 font-black text-neutral-900 dark:text-neutral-100 text-2xl">
+                        <span className="text-xs font-bold uppercase mb-1 text-neutral-400 pt-0.5">
+                          Score
+                        </span>{" "}
+                        {cards[cardIndex].score}
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditTitle(cards[cardIndex]?.title || "");
+                        setEditText(cards[cardIndex]?.text || "");
+                        setEditScore(cards[cardIndex]?.score || "");
+                        setIsEditingCard(true);
+                      }}
+                      className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-850 rounded text-neutral-500 hover:text-sky-500 transition-colors"
+                      title="Edit Card"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold uppercase text-neutral-400 pt-0.5">Score</span>
+                    <input
+                      type="text"
+                      className="w-12 bg-neutral-100 dark:bg-neutral-850 border border-neutral-300 dark:border-neutral-700 rounded px-1.5 py-0.5 text-xs font-bold text-center text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      value={editScore}
+                      onChange={(e) => setEditScore(e.target.value)}
+                      placeholder="--"
+                    />
                   </div>
                 )}
               </div>
-              <h2 className="text-3xl font-black leading-tight mb-4 text-neutral-900 dark:text-neutral-100">
-                {cards[cardIndex]?.title}
-              </h2>
-              <p className="text-lg font-medium leading-relaxed text-neutral-600 dark:text-neutral-400 whitespace-pre-line">
-                {cards[cardIndex]?.text}
-              </p>
+
+              {isEditingCard ? (
+                <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                  <div>
+                    <label className="block text-[9px] font-bold text-neutral-400 uppercase mb-1">Title</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-100 dark:bg-neutral-850 border border-neutral-300 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-sm font-bold text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <label className="block text-[9px] font-bold text-neutral-400 uppercase mb-1">Content</label>
+                    <textarea
+                      className="w-full flex-1 bg-neutral-100 dark:bg-neutral-850 border border-neutral-300 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-xs text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-sky-500 resize-none font-sans leading-relaxed min-h-[120px]"
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const allLeadCards = getActiveCards();
+                        const updatedCard = {
+                          ...cards[cardIndex],
+                          title: editTitle,
+                          text: editText,
+                          score: editScore || undefined
+                        };
+                        const updatedCardsArray = [...allLeadCards];
+                        updatedCardsArray[cardIndex] = updatedCard;
+
+                        setCustomCards((prev: any) => ({
+                          ...prev,
+                          [selectedLead]: updatedCardsArray
+                        }));
+                        setIsEditingCard(false);
+                      }}
+                      className="flex-1 py-2 bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-100 text-white dark:text-neutral-900 font-bold rounded-lg text-xs transition"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsEditingCard(false);
+                      }}
+                      className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-800 dark:text-neutral-200 font-bold rounded-lg text-xs transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-3xl font-black leading-tight mb-4 text-neutral-900 dark:text-neutral-100">
+                    {cards[cardIndex]?.title}
+                  </h2>
+                  <p className="text-lg font-medium leading-relaxed text-neutral-600 dark:text-neutral-400 whitespace-pre-line">
+                    {cards[cardIndex]?.text}
+                  </p>
+                </>
+              )}
               <div className="mt-auto flex justify-between items-center text-neutral-400">
                 <span className="text-[10px] font-bold uppercase tracking-widest">
                   Swipe
