@@ -638,12 +638,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (event.data?.type === 'GOOGLE_OAUTH_SUCCESS' && event.data?.token) {
         localStorage.setItem('google_provider_token', event.data.token);
         recordGoogleTokenObtained();
         setGoogleToken(event.data.token);
         setNotification(null);
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            setSession(session);
+            syncProfile(session);
+          }
+        } catch (err) {
+          console.error("Failed to sync session after OAuth popup success:", err);
+        }
       }
     };
     window.addEventListener('message', handleMessage);
