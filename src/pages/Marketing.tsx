@@ -234,6 +234,35 @@ export function Marketing() {
     return CARDS_BY_PROCESS[folder]?.length || 0;
   };
 
+  const getContextPlaceholder = () => {
+    switch (selectedFolder) {
+      case "Positioning":
+        return "Tell me about the work you do";
+      case "Audience":
+        return "Who do you want to talk to and why";
+      case "Qualifying":
+        return "Business need, decision maker, budget, and timeline";
+      case "Discovery":
+        return `Add relevant context for @${selectedActiveLead || "lead name"} <-> synth to lead`;
+      case "Solution Design":
+        return "Add relevant context";
+      case "Business Case":
+        return "Add relevant context";
+      case "Proposal":
+        return "Add relevant context";
+      case "Closing":
+        return "Add closing remark and context for future opportunities <-> synth to lead";
+      case "Objection Handling":
+        return "Add relevant context";
+      case "Onboarding":
+        return "Add relevant context";
+      case "Referral":
+        return "Add relevant context";
+      default:
+        return "Add relevant context";
+    }
+  };
+
   const getActiveCards = () => {
     if (!selectedFolder) return [];
 
@@ -1102,7 +1131,7 @@ export function Marketing() {
                   </label>
                   <textarea
                     className="w-full h-24 p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 resize-none transition-shadow"
-                    placeholder="E.g., Factor in a 10% material cost increase for Q3..."
+                    placeholder={getContextPlaceholder()}
                     value={contextInput}
                     onChange={(e) => setContextInput(e.target.value)}
                   ></textarea>
