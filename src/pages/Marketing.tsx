@@ -149,8 +149,21 @@ export function Marketing() {
         }
 
         const driveFiles = await listFilesInFolder(folderId);
+        const inputContextDir = driveFiles.find(f => f.name === "Input Context" && f.mimeType === 'application/vnd.google-apps.folder');
+        
+        let allFiles = driveFiles.filter(f => f.name !== "Input Context");
+        
+        if (inputContextDir) {
+          try {
+            const contextFiles = await listFilesInFolder(inputContextDir.id);
+            allFiles = [...allFiles, ...contextFiles];
+          } catch (err) {
+            console.error("Failed to list files in Input Context subfolder:", err);
+          }
+        }
+
         // Always replace with latest from Drive (not just merge) so deleted files disappear too
-        const docFiles = driveFiles.map((f) => ({
+        const docFiles = allFiles.map((f) => ({
           name: f.name,
           url: f.mimeType === 'application/vnd.google-apps.document'
             ? `https://docs.google.com/document/d/${f.id}/edit`
@@ -409,10 +422,12 @@ export function Marketing() {
             : (viewMode === 'shared' ? await findOrCreateFolder(selectedActiveLead, sharedFoldersMap[selectedFolder]) : await syncProcessLeadFolder(selectedFolder, selectedActiveLead));
 
           if (folderId) {
+            const inputContextFolderId = await findOrCreateFolder("Input Context", folderId);
+
             for (let i = 0; i < attachedFiles.length; i++) {
               const f = attachedFiles[i];
               if (f.url.startsWith("data:")) {
-                const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                const driveFile = await uploadBase64ToDrive(f.name, f.url, inputContextFolderId);
                 finalDocs[i].googleDocId = driveFile.id;
               }
             }
@@ -424,13 +439,64 @@ export function Marketing() {
             }
 
             if (contextInput) {
-              const driveFile = await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, folderId);
+              const driveFile = await createGoogleDocFromText(`${selectedFolder} Context Summary`, contextInput, inputContextFolderId);
               finalDocs.push({
                 name: `${selectedFolder} Context Summary`,
                 url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
                 lead: selectedActiveLead,
                 googleDocId: driveFile.id
               } as any);
+            }
+
+            // Sync Gmail interactions to Input Context folder if Discovery stage
+            if (selectedFolder === "Discovery" && selectedActiveLead) {
+              try {
+                const leadThreads = proposalThreads[selectedActiveLead] || [];
+                const msgs: any[] = [];
+                leadThreads.forEach((t: any) => {
+                  const threadMsgs = threadMessages[t.threadId] || [];
+                  msgs.push(...threadMsgs);
+                });
+
+                if (msgs.length > 0) {
+                  msgs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                  let synthText = `=== EMAIL INTERACTIONS HISTORY FOR ${selectedActiveLead.toUpperCase()} ===\n`;
+                  synthText += `Generated on: ${new Date().toLocaleString()}\n`;
+                  synthText += `Total Messages: ${msgs.length}\n\n`;
+
+                  msgs.forEach((m, idx) => {
+                    const sender = m.isFromMe ? "You (Sales Team)" : m.from;
+                    synthText += `[Message #${idx + 1}] ---\n`;
+                    synthText += `From: ${sender}\n`;
+                    synthText += `Date: ${new Date(m.date).toLocaleString()}\n`;
+                    synthText += `Subject: ${m.threadSubject || 'Re: Proposal'}\n`;
+                    synthText += `Snippet: ${m.snippet || m.body || ''}\n`;
+                    synthText += `--------------------------------------------------\n\n`;
+                  });
+
+                  const docName = `Email Interactions Context`;
+                  const driveFile = await createGoogleDocFromText(docName, synthText, inputContextFolderId);
+
+                  finalDocs.push({
+                    name: docName,
+                    url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
+                    lead: selectedActiveLead,
+                    googleDocId: driveFile.id
+                  } as any);
+
+                  // ALSO write it to the Lead folder's Input Context subfolder!
+                  const leadFolderId = viewMode === 'shared'
+                    ? sharedFoldersMap[selectedActiveLead]
+                    : await syncFolderStructure(selectedActiveLead, 'LEAD');
+                  if (leadFolderId) {
+                    const leadInputContextId = await findOrCreateFolder("Input Context", leadFolderId);
+                    await createGoogleDocFromText(docName, synthText, leadInputContextId);
+                  }
+                }
+              } catch (err) {
+                console.error("Failed to sync Gmail tracking interactions to Drive:", err);
+              }
             }
           }
         } catch (e) {
@@ -1048,6 +1114,35 @@ export function Marketing() {
                     onChange={setAttachedFiles}
                   />
                 </div>
+
+                {selectedFolder === "Discovery" && selectedActiveLead && (
+                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-4 rounded-2xl border border-neutral-200/50 dark:border-neutral-700/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500">Gmail Tracking Interactions</h4>
+                      <span className="text-[10px] bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400 px-2 py-0.5 rounded font-bold uppercase">Discovery Mode</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed">
+                      Tracked client email thread replies for this lead will be consolidated and synchronized into the "Input Context" folder.
+                    </p>
+                    <div className="max-h-[120px] overflow-y-auto space-y-2 border-t border-neutral-200/30 pt-2 text-[11px]">
+                      {(() => {
+                        const emailMessages = getLeadEmailMessages();
+                        if (emailMessages.length === 0) {
+                          return <div className="italic text-neutral-400 py-1">No tracked emails found for this lead. Make sure client emails are active.</div>;
+                        }
+                        return emailMessages.map((msg: any) => (
+                          <div key={msg.id} className="flex justify-between items-start gap-3 bg-white/60 dark:bg-neutral-800/40 p-2 rounded-xl border border-neutral-200/20">
+                            <span className="font-semibold text-neutral-600 dark:text-neutral-400 truncate max-w-[80px] shrink-0">
+                              {msg.isFromMe ? "Outbound" : "Inbound"}
+                            </span>
+                            <span className="truncate flex-1 text-neutral-700 dark:text-neutral-300">{msg.snippet || msg.body}</span>
+                            <span className="text-[9px] text-neutral-400 shrink-0">{new Date(msg.date).toLocaleDateString()}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 <button
                   disabled={isGenerating}

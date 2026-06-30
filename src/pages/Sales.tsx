@@ -12,7 +12,7 @@ import {
 
 const LEAD_DATA: Record<string, any[]> = {};
 
-import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder } from "../lib/googleDrive";
+import { syncFolderStructure, uploadToDrive, uploadBase64ToDrive, createGoogleDocFromText, listFilesInFolder, findOrCreateFolder } from "../lib/googleDrive";
 
 export function Sales() {
   const {
@@ -83,8 +83,21 @@ export function Sales() {
         }
 
         const driveFiles = await listFilesInFolder(folderId);
+        const inputContextDir = driveFiles.find(f => f.name === "Input Context" && f.mimeType === 'application/vnd.google-apps.folder');
+        
+        let allFiles = driveFiles.filter(f => f.name !== "Input Context");
+        
+        if (inputContextDir) {
+          try {
+            const contextFiles = await listFilesInFolder(inputContextDir.id);
+            allFiles = [...allFiles, ...contextFiles];
+          } catch (err) {
+            console.error("Failed to list files in Input Context subfolder:", err);
+          }
+        }
+
         // Always replace with latest from Drive so dropped files appear immediately
-        const docFiles = driveFiles.map((f) => ({
+        const docFiles = allFiles.map((f) => ({
           name: f.name,
           url: f.mimeType === 'application/vnd.google-apps.document'
             ? `https://docs.google.com/document/d/${f.id}/edit`
@@ -203,15 +216,17 @@ export function Sales() {
               ? sharedFoldersMap[selectedLead || newLeadName]
               : await syncFolderStructure(selectedLead || newLeadName, 'LEAD');
             if (folderId) {
+              const inputContextFolderId = await findOrCreateFolder("Input Context", folderId);
+
               for (let i = 0; i < attachedFiles.length; i++) {
                 const f = attachedFiles[i];
                 if (f.url.startsWith("data:")) {
-                  const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                  const driveFile = await uploadBase64ToDrive(f.name, f.url, inputContextFolderId);
                   finalDocs[i].googleDocId = driveFile.id;
                 }
               }
               if (contextInput) {
-                 const driveFile = await createGoogleDocFromText(`${selectedLead || newLeadName} Context Summary`, contextInput, folderId);
+                 const driveFile = await createGoogleDocFromText(`${selectedLead || newLeadName} Context Summary`, contextInput, inputContextFolderId);
                  finalDocs.push({
                    name: `${selectedLead || newLeadName} Context Summary`,
                    url: `https://docs.google.com/document/d/${driveFile.id}/edit`,
@@ -277,15 +292,17 @@ export function Sales() {
               ? sharedFoldersMap[selectedLead]
               : await syncFolderStructure(selectedLead, 'LEAD');
             if (folderId) {
+              const inputContextFolderId = await findOrCreateFolder("Input Context", folderId);
+
               for (let i = 0; i < attachedFiles.length; i++) {
                 const f = attachedFiles[i];
                 if (f.url.startsWith("data:")) {
-                  const driveFile = await uploadBase64ToDrive(f.name, f.url, folderId);
+                  const driveFile = await uploadBase64ToDrive(f.name, f.url, inputContextFolderId);
                   finalDocs[i].googleDocId = driveFile.id;
                 }
               }
               if (contextInput) {
-                 const driveFile = await createGoogleDocFromText(`Context Add (${new Date().toLocaleString()})`, contextInput, folderId);
+                 const driveFile = await createGoogleDocFromText(`Context Add (${new Date().toLocaleString()})`, contextInput, inputContextFolderId);
                  finalDocs.push({
                    name: `Context Add (${new Date().toLocaleString()})`,
                    url: `https://docs.google.com/document/d/${driveFile.id}/edit`,

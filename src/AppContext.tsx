@@ -11,6 +11,10 @@ import {
   listSharedFolders,
   getFolderPermissions,
   readTeamProfilesFromDrive,
+  findOrCreateFolder,
+  createGoogleDocFromText,
+  syncFolderStructure,
+  syncProcessLeadFolder,
 } from './lib/googleDrive';
 import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
 import { checkForNewReplies } from './lib/gmail';
@@ -514,6 +518,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   title: 'New Client Reply Received',
                   message: `Lead "${lead}" replied: "${reply.snippet || 'Click to view'}"`,
                 });
+
+                // Auto-sync consolidated email interactions history to Input Context folders
+                (async () => {
+                  try {
+                    const leadThreads = proposalThreads[lead] || [];
+                    const msgs: any[] = [];
+                    leadThreads.forEach((t: any) => {
+                      const threadMsgs = threadMessagesMap[t.threadId] || [];
+                      msgs.push(...threadMsgs);
+                    });
+
+                    if (msgs.length > 0) {
+                      msgs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                      let synthText = `=== EMAIL INTERACTIONS HISTORY FOR ${lead.toUpperCase()} ===\n`;
+                      synthText += `Generated on: ${new Date().toLocaleString()}\n`;
+                      synthText += `Total Messages: ${msgs.length}\n\n`;
+
+                      msgs.forEach((m, idx) => {
+                        const sender = m.isFromMe ? "You (Sales Team)" : m.from;
+                        synthText += `[Message #${idx + 1}] ---\n`;
+                        synthText += `From: ${sender}\n`;
+                        synthText += `Date: ${new Date(m.date).toLocaleString()}\n`;
+                        synthText += `Subject: ${m.threadSubject || 'Re: Proposal'}\n`;
+                        synthText += `Snippet: ${m.snippet || m.body || ''}\n`;
+                        synthText += `--------------------------------------------------\n\n`;
+                      });
+
+                      const docName = `Email Interactions Context`;
+
+                      const leadFolderId = await syncFolderStructure(lead, 'LEAD');
+                      if (leadFolderId) {
+                        const leadInputContextId = await findOrCreateFolder("Input Context", leadFolderId);
+                        await createGoogleDocFromText(docName, synthText, leadInputContextId);
+                      }
+
+                      const discoveryFolderId = await syncProcessLeadFolder("Discovery", lead);
+                      if (discoveryFolderId) {
+                        const discoveryInputContextId = await findOrCreateFolder("Input Context", discoveryFolderId);
+                        await createGoogleDocFromText(docName, synthText, discoveryInputContextId);
+                      }
+                      console.log(`[Drive Sync] Automatically updated Input Context files for lead: ${lead}`);
+                    }
+                  } catch (err) {
+                    console.error("Failed to execute background Drive interactions sync:", err);
+                  }
+                })();
               }
             });
           });
