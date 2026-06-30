@@ -180,3 +180,74 @@ export async function sendInviteEmail(opts: {
   await checkGmailResponse(res, 'sending invite email');
   return res.json();
 }
+
+/** Sends an onboarding email containing Drive link and generated insight cards to an invitee. */
+export async function sendOnboardingEmail(opts: {
+  to: string;
+  folderName: string;
+  folderLink: string;
+  onboardingCards: Array<{ title: string; text: string }>;
+  inviterEmail: string;
+}) {
+  const token = await ensureValidGoogleToken();
+
+  const cardsHtml = opts.onboardingCards.map((c, i) => `
+    <div style="margin-bottom: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #f8fafc; border-left: 4px solid #0ea5e9;">
+      <h3 style="margin: 0 0 6px 0; font-size: 14px; color: #0f172a; font-weight: bold;">
+        Card ${i + 1}: ${c.title}
+      </h3>
+      <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
+        ${c.text}
+      </p>
+    </div>
+  `).join('');
+
+  const subject = `Onboarding & Drive Folder Access for "${opts.folderName}"`;
+  const bodyHtml = `
+    <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+      <h2 style="color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Project Onboarding</h2>
+      <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+        <strong>${opts.inviterEmail}</strong> has invited you to collaborate on the folder <strong>"${opts.folderName}"</strong> on Google Drive.
+      </p>
+      
+      <div style="margin: 24px 0; text-align: center;">
+        <a href="${opts.folderLink}" style="background-color: #0ea5e9; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">
+          Access Drive Folder
+        </a>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+      
+      <h3 style="color: #0f172a; font-size: 16px; margin: 0 0 16px 0;">Teammate Onboarding Insights</h3>
+      <p style="font-size: 13px; color: #64748b; margin-bottom: 16px; line-height: 1.5;">
+        Here are the five key onboarding cards compiled from the folder contents to help you get started immediately:
+      </p>
+      
+      ${cardsHtml}
+
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #94a3b8; text-align: center; margin-bottom: 0; line-height: 1.5;">
+        You can log in to the <strong>Sales & Process AI</strong> application to view and swipe these onboarding cards interactively in the workspace dashboard.
+      </p>
+    </div>
+  `;
+
+  const headers = [
+    `To: ${opts.to}`,
+    `Subject: ${subject}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `MIME-Version: 1.0`,
+  ];
+  const raw = base64UrlEncode(`${headers.join('\r\n')}\r\n\r\n${bodyHtml}`);
+
+  const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw }),
+  });
+  await checkGmailResponse(res, 'sending onboarding email');
+  return res.json();
+}

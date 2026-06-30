@@ -50,6 +50,7 @@ export function Marketing() {
     threadMessages,
     syncEmailReplies,
     isSyncingEmails,
+    onboardingCards,
   } = useAppContext();
   const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -199,6 +200,12 @@ export function Marketing() {
   }, [isAddModalOpen]);
 
   const getFolderCardCount = (folder: string) => {
+    const userEmail = session?.user?.email || localStorage.getItem('user_email');
+    const onboardingKey = `${folder}_${userEmail}`;
+    if (onboardingCards && onboardingCards[onboardingKey]) {
+      return onboardingCards[onboardingKey].length;
+    }
+
     let currentCustomCards = customCards[folder] || [];
 
     if (folder !== "Positioning" && selectedActiveLead) {
@@ -216,6 +223,12 @@ export function Marketing() {
 
   const getActiveCards = () => {
     if (!selectedFolder) return [];
+
+    const userEmail = session?.user?.email || localStorage.getItem('user_email');
+    const onboardingKey = `${selectedFolder}_${userEmail}`;
+    if (onboardingCards && onboardingCards[onboardingKey]) {
+      return onboardingCards[onboardingKey];
+    }
 
     let currentCustomCards = customCards[selectedFolder] || [];
 

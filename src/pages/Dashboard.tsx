@@ -2,20 +2,21 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { EXAC_KPIS, PIPELINE_DATA, HIT_RATE_DATA, UTILIZATION_DATA, DELIVERY_DATA, ACTION_ITEMS } from '../data/mockData';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { CheckCircle2, Circle, ChevronDown, GripVertical, FolderOpen } from 'lucide-react';
+import { CheckCircle2, Circle, ChevronDown, GripVertical, FolderOpen, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
 import { Plus, Mail } from 'lucide-react';
-import { shareFolderWithEmail, revokeFolderAccessForEmail, syncFolderStructure } from '../lib/googleDrive';
-import { sendInviteEmail } from '../lib/gmail';
+import { shareFolderWithEmail, revokeFolderAccessForEmail, syncFolderStructure, listFilesInFolder, readAnyDriveFileText } from '../lib/googleDrive';
+import { sendInviteEmail, sendOnboardingEmail } from '../lib/gmail';
 
 export function Dashboard() {
   const {
     processFolders, leadFolders, folderAccess, setFolderAccess,
     teamMembers, inviteTeamMember, reportGoogleError, session,
     processLeads, proposalThreads, customCardsProcess: customCards,
+    customCardsLead, onboardingCards, setOnboardingCards,
   } = useAppContext();
   const [selectedKpi, setSelectedKpi] = useState<KPI | null>(null);
   const [activeGraph, setActiveGraph] = useState<'Qualified Leads' | 'Proposal Acceptance' | 'Closing' | 'Referral'>('Qualified Leads');
@@ -84,30 +85,165 @@ export function Dashboard() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
+  // Onboarding generation modal states
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [onboardingTeammate, setOnboardingTeammate] = useState<any>(null);
+  const [onboardingFolderName, setOnboardingFolderName] = useState('');
+  const [onboardingStatus, setOnboardingStatus] = useState<'idle' | 'fetching' | 'chunking' | 'summarizing' | 'compiling' | 'ready' | 'sending' | 'success' | 'error'>('idle');
+  const [onboardingProgressText, setOnboardingProgressText] = useState('');
+  const [onboardingCardsPreview, setOnboardingCardsPreview] = useState<any[]>([]);
+  const [onboardingFolderId, setOnboardingFolderId] = useState('');
+  const [onboardingCardIndex, setOnboardingCardIndex] = useState(0);
+
   const assignMemberToFolder = async (memberId: string, folderName: string) => {
     const member = teamMembers.find((m: any) => m.id === memberId);
     if (!member) return;
 
-    setFolderAccess((prev: any) => {
-      const currentViewAccess = prev[folderView]?.[folderName] || [];
-      if (currentViewAccess.includes(memberId)) return prev;
-      return {
-        ...prev,
-        [folderView]: {
-          ...prev[folderView],
-          [folderName]: [...currentViewAccess, memberId],
-        },
-      };
-    });
+    if (!member.email) {
+      setFolderAccess((prev: any) => {
+        const currentViewAccess = prev[folderView]?.[folderName] || [];
+        if (currentViewAccess.includes(memberId)) return prev;
+        return {
+          ...prev,
+          [folderView]: {
+            ...prev[folderView],
+            [folderName]: [...currentViewAccess, memberId],
+          },
+        };
+      });
+      return;
+    }
 
-    if (member.email) {
-      try {
-        const folderId = await syncFolderStructure(folderName, folderView === 'Lead' ? 'LEAD' : 'PROCESS');
-        await shareFolderWithEmail(folderId, member.email, 'writer');
-      } catch (e) {
-        console.error('Failed to share Drive folder:', e);
-        reportGoogleError?.(e, `Failed to share "${folderName}" with ${member.email}`);
+    setOnboardingTeammate(member);
+    setOnboardingFolderName(folderName);
+    setIsOnboardingModalOpen(true);
+    setOnboardingStatus('fetching');
+    setOnboardingProgressText('Connecting and finding Drive folder...');
+    setOnboardingCardIndex(0);
+
+    try {
+      const isLead = folderView === 'Lead';
+      const folderType = isLead ? 'LEAD' : 'PROCESS';
+      const folderId = await syncFolderStructure(folderName, folderType);
+      setOnboardingFolderId(folderId);
+
+      setOnboardingProgressText('Scanning folder for documents...');
+      const files = await listFilesInFolder(folderId);
+      
+      let combinedContent = '';
+      if (files.length > 0) {
+        setOnboardingStatus('fetching');
+        setOnboardingProgressText(`Found ${files.length} documents. Reading content...`);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const text = await readAnyDriveFileText(file.id, file.mimeType);
+          if (text) {
+            combinedContent += `--- Document: ${file.name} ---\n${text}\n\n`;
+          }
+        }
       }
+
+      if (!combinedContent.trim()) {
+        setOnboardingProgressText('Folder is empty. Compiling fallback context from existing stage cards...');
+        let fallbackCards: any[] = [];
+        if (isLead) {
+          fallbackCards = customCardsLead[folderName] || [];
+        } else {
+          fallbackCards = customCards[folderName] || [];
+        }
+        if (fallbackCards.length > 0) {
+          combinedContent = fallbackCards.map(c => `[${c.title}] ${c.text}`).join('\n\n');
+        } else {
+          combinedContent = `Project Folder: ${folderName}\nFolder View: ${folderView}\nThis is a new project for ${folderName}.`;
+        }
+      }
+
+      setOnboardingStatus('compiling');
+      setOnboardingProgressText('Processing chunking & summarizing project insights (may take a few seconds)...');
+      
+      const response = await fetch('/api/generate-onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: combinedContent }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Onboarding generation API failed');
+      }
+
+      const data = await response.json();
+      if (!data.cards || data.cards.length === 0) {
+        throw new Error('No cards returned from generator');
+      }
+
+      setOnboardingCardsPreview(data.cards);
+      setOnboardingStatus('ready');
+      setOnboardingProgressText('Onboarding cards generated successfully! Swipable preview ready.');
+    } catch (err: any) {
+      console.error(err);
+      setOnboardingStatus('error');
+      setOnboardingProgressText(err.message || 'An error occurred during onboarding card generation.');
+    }
+  };
+
+  const confirmOnboardingAccess = async () => {
+    if (!onboardingTeammate || !onboardingFolderName || !onboardingFolderId) return;
+
+    setOnboardingStatus('sending');
+    setOnboardingProgressText('Sharing Drive folder and sending customized onboarding email...');
+
+    try {
+      const email = onboardingTeammate.email;
+      const folderName = onboardingFolderName;
+      const folderId = onboardingFolderId;
+      const cards = onboardingCardsPreview;
+
+      // 1. Share Drive folder with sendNotificationEmail=false
+      await shareFolderWithEmail(folderId, email, 'writer');
+
+      // 2. Send unified email via Gmail
+      const inviterEmail = session?.user?.email || localStorage.getItem('user_email') || 'Your project lead';
+      const folderLink = `https://drive.google.com/drive/folders/${folderId}`;
+      
+      await sendOnboardingEmail({
+        to: email,
+        folderName,
+        folderLink,
+        onboardingCards: cards,
+        inviterEmail,
+      });
+
+      // 3. Save access locally in folderAccess state
+      setFolderAccess((prev: any) => {
+        const currentViewAccess = prev[folderView]?.[folderName] || [];
+        if (currentViewAccess.includes(onboardingTeammate.id)) return prev;
+        return {
+          ...prev,
+          [folderView]: {
+            ...prev[folderView],
+            [folderName]: [...currentViewAccess, onboardingTeammate.id],
+          },
+        };
+      });
+
+      // 4. Save onboarding cards to AppContext state onboardingCards
+      setOnboardingCards((prev: any) => ({
+        ...prev,
+        [`${folderName}_${email}`]: cards,
+      }));
+
+      setOnboardingStatus('success');
+      setOnboardingProgressText('Teammate successfully onboarded! Access shared and customized email sent.');
+      setTimeout(() => {
+        setIsOnboardingModalOpen(false);
+        setOnboardingTeammate(null);
+        setOnboardingFolderName('');
+        setOnboardingCardsPreview([]);
+      }, 2000);
+    } catch (err: any) {
+      console.error(err);
+      setOnboardingStatus('error');
+      setOnboardingProgressText(err.message || 'Failed to complete onboarding sharing.');
     }
   };
 
@@ -495,6 +631,133 @@ export function Dashboard() {
           >
             {isInviting ? 'Inviting...' : 'Invite'}
           </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isOnboardingModalOpen}
+        onClose={() => {
+          if (onboardingStatus !== 'fetching' && onboardingStatus !== 'compiling' && onboardingStatus !== 'sending') {
+            setIsOnboardingModalOpen(false);
+          }
+        }}
+        title="Teammate Onboarding & Sharing"
+        className="sm:max-w-xl"
+      >
+        <div className="space-y-6">
+          <div className="bg-neutral-50 dark:bg-neutral-850 p-4 rounded-2xl border border-neutral-100 dark:border-neutral-800 space-y-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+            <p><strong>Teammate:</strong> {onboardingTeammate?.name || 'Teammate'} ({onboardingTeammate?.email})</p>
+            <p><strong>Shared Folder:</strong> {onboardingFolderName} ({folderView} Folder)</p>
+          </div>
+
+          {(onboardingStatus === 'fetching' || onboardingStatus === 'compiling' || onboardingStatus === 'sending') && (
+            <div className="flex flex-col items-center justify-center py-10 space-y-4">
+              <svg className="animate-spin h-10 w-10 text-sky-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <div className="text-center space-y-1">
+                <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                  {onboardingStatus === 'fetching' && 'Scanning Drive Documents...'}
+                  {onboardingStatus === 'compiling' && 'Chunking & Generating Cards...'}
+                  {onboardingStatus === 'sending' && 'Sharing & Sending Email...'}
+                </p>
+                <p className="text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+                  {onboardingProgressText}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {onboardingStatus === 'success' && (
+            <div className="flex flex-col items-center justify-center py-10 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-500">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Onboarding Complete!</p>
+              <p className="text-xs text-neutral-400 text-center">{onboardingProgressText}</p>
+            </div>
+          )}
+
+          {onboardingStatus === 'error' && (
+            <div className="flex flex-col items-center justify-center py-10 space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500">
+                <X className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Onboarding Failed</p>
+              <p className="text-xs text-neutral-400 text-center max-w-sm leading-relaxed">{onboardingProgressText}</p>
+              <div className="flex gap-2 w-full mt-4">
+                <button
+                  onClick={() => assignMemberToFolder(onboardingTeammate?.id, onboardingFolderName)}
+                  className="flex-1 py-2.5 bg-neutral-950 text-white font-semibold rounded-xl text-xs"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => setIsOnboardingModalOpen(false)}
+                  className="px-4 py-2.5 bg-neutral-200 text-neutral-800 font-semibold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {onboardingStatus === 'ready' && onboardingCardsPreview.length > 0 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Onboarding Insights Preview</h4>
+                <p className="text-[11px] text-neutral-500 mt-1">Review the five cards the teammate will receive and swipe/click to browse.</p>
+              </div>
+
+              <div className="flex flex-col items-center justify-center relative min-h-[220px]">
+                <div className="text-xs font-bold text-neutral-500 mb-2">
+                  {onboardingCardIndex + 1} / {onboardingCardsPreview.length}
+                </div>
+                <div className="relative w-full max-w-[320px] aspect-[4/3] bg-gradient-to-tr from-sky-50 to-blue-50 dark:from-neutral-800 dark:to-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-3xl p-6 shadow-md flex flex-col justify-between overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-400 to-blue-500" />
+                  
+                  <div className="space-y-2">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-sky-500 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded">Card Insight</span>
+                    <h5 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 mt-1">{onboardingCardsPreview[onboardingCardIndex]?.title}</h5>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed mt-1">{onboardingCardsPreview[onboardingCardIndex]?.text}</p>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-[10px] text-neutral-400 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                    <button 
+                      onClick={() => setOnboardingCardIndex(prev => prev > 0 ? prev - 1 : onboardingCardsPreview.length - 1)}
+                      className="hover:text-sky-500 font-bold transition-colors"
+                    >
+                      ← Prev
+                    </button>
+                    <span className="font-semibold uppercase tracking-widest text-[8px]">Teammate Onboarding</span>
+                    <button 
+                      onClick={() => setOnboardingCardIndex(prev => prev < onboardingCardsPreview.length - 1 ? prev + 1 : 0)}
+                      className="hover:text-sky-500 font-bold transition-colors"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={confirmOnboardingAccess}
+                  className="flex-1 py-3 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-md flex items-center justify-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  Send Onboarding Email & Share
+                </button>
+                <button
+                  onClick={() => setIsOnboardingModalOpen(false)}
+                  className="px-4 py-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-850 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold rounded-xl text-sm transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 

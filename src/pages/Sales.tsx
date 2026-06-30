@@ -29,6 +29,8 @@ export function Sales() {
     sharedFoldersMap,
     leadEmails,
     setLeadEmail,
+    session,
+    onboardingCards,
   } = useAppContext();
   const [viewMode, setViewMode] = useState<'my' | 'shared'>('my');
   const [selectedLead, setSelectedLead] = useState<string | null>(null);
@@ -108,6 +110,14 @@ export function Sales() {
   }, [selectedLead, viewMode, sharedFoldersMap]);
 
   const getActiveCards = () => {
+    if (selectedLead) {
+      const userEmail = session?.user?.email || localStorage.getItem('user_email');
+      const onboardingKey = `${selectedLead}_${userEmail}`;
+      if (onboardingCards && onboardingCards[onboardingKey]) {
+        return onboardingCards[onboardingKey];
+      }
+    }
+
     const isMockLead = selectedLead === "Precision Components Inc.";
     // Fallback to legacy keys if they exist
     const legacyKey = `${selectedLead}_form`;
@@ -129,6 +139,12 @@ export function Sales() {
   };
 
   const getLeadCardCount = (lead: string) => {
+    const userEmail = session?.user?.email || localStorage.getItem('user_email');
+    const onboardingKey = `${lead}_${userEmail}`;
+    if (onboardingCards && onboardingCards[onboardingKey]) {
+      return onboardingCards[onboardingKey].length;
+    }
+
     const isMockLead = lead === "Precision Components Inc.";
     const legacyKey = `${lead}_form`;
     const customLength =

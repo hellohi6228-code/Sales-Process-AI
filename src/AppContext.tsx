@@ -70,6 +70,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem('custom_cards_lead', JSON.stringify(customCardsLead));
   }, [customCardsLead]);
+
+  const [onboardingCards, setOnboardingCards] = useState<Record<string, any[]>>(() => {
+    try {
+      const saved = localStorage.getItem('onboarding_cards');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('onboarding_cards', JSON.stringify(onboardingCards));
+  }, [onboardingCards]);
   const [folderAccess, setFolderAccess] = useState<Record<string, Record<string, string[]>>>({
     'Process': {},
     'Lead': {}
@@ -654,6 +667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sharedFoldersMap, setSharedFoldersMap,
       leadEmails, setLeadEmail,
       threadMessages, syncEmailReplies, isSyncingEmails,
+      onboardingCards, setOnboardingCards,
     }}>
       {children}
     </AppContext.Provider>

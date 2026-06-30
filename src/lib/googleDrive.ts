@@ -228,6 +228,30 @@ export async function getFileContent(fileId: string) {
   return res.text();
 }
 
+export async function getRawFileContent(fileId: string) {
+  const token = await ensureValidGoogleToken();
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  await checkDriveResponse(res, 'fetching raw file content');
+  return res.text();
+}
+
+export async function readAnyDriveFileText(fileId: string, mimeType: string): Promise<string> {
+  try {
+    if (mimeType === 'application/vnd.google-apps.document') {
+      return await getFileContent(fileId);
+    }
+    if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType.includes('plain')) {
+      return await getRawFileContent(fileId);
+    }
+  } catch (e) {
+    console.error(`Failed to read file ${fileId} (${mimeType}):`, e);
+  }
+  return '';
+}
+
 export async function updateFileContent(fileId: string, content: string) {
   const token = await ensureValidGoogleToken();
   const res = await fetch(
@@ -259,7 +283,7 @@ export async function shareFolderWithEmail(
   const token = await ensureValidGoogleToken();
 
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions`,
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?sendNotificationEmail=false`,
     {
       method: 'POST',
       headers: {
