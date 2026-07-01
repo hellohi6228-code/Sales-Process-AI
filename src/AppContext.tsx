@@ -431,6 +431,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const removeTeamMember = (id: string) => {
+    setTeamMembers((prev: any[]) => prev.filter((m) => m.id !== id));
+  };
+
   // --- Gmail proposal tracking (keyed by lead name) ---
   const [proposalThreads, setProposalThreads] = useState<Record<string, any[]>>(() => {
     try {
@@ -1047,7 +1051,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notification, setNotification,
       reportGoogleError,
       reconnectGoogle,
-      teamMembers, setTeamMembers, inviteTeamMember,
+      teamMembers, setTeamMembers, inviteTeamMember, removeTeamMember,
       proposalThreads, setProposalThreads, addProposalThread,
       syncDriveToState,
       isSyncing,

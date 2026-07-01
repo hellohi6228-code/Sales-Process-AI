@@ -7,7 +7,7 @@ import { cn } from '../lib/utils';
 import { Modal } from '../components/ui/Modal';
 import { KPI, ActionItem } from '../types';
 import { useAppContext } from '../AppContext';
-import { Plus, Mail } from 'lucide-react';
+import { Plus, Mail, Trash2 } from 'lucide-react';
 import { shareFolderWithEmail, revokeFolderAccessForEmail, syncFolderStructure, listFilesInFolder, readAnyDriveFileText } from '../lib/googleDrive';
 import { sendInviteEmail, sendOnboardingEmail } from '../lib/gmail';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export function Dashboard() {
   const {
     processFolders, leadFolders, folderAccess, setFolderAccess,
-    teamMembers, inviteTeamMember, reportGoogleError, session,
+    teamMembers, inviteTeamMember, removeTeamMember, reportGoogleError, session,
     processLeads, proposalThreads, customCardsProcess: customCards,
     customCardsLead, onboardingCards, setOnboardingCards,
   } = useAppContext();
@@ -295,46 +295,42 @@ export function Dashboard() {
 
   const getGraphData = () => {
     if (activeGraph === 'Proposal Acceptance') {
-      const maxVal = Math.max(48, acceptanceRate);
       return [
-        { name: 'Jan', value: Math.round(maxVal * 0.45), target: 50 },
-        { name: 'Feb', value: Math.round(maxVal * 0.6), target: 50 },
-        { name: 'Mar', value: Math.round(maxVal * 0.75), target: 50 },
-        { name: 'Apr', value: Math.round(maxVal * 0.85), target: 50 },
-        { name: 'May', value: Math.round(maxVal * 0.95), target: 50 },
-        { name: 'Jun', value: maxVal, target: 50 },
+        { name: 'Jan', value: Math.round(acceptanceRate * 0.45), target: 50 },
+        { name: 'Feb', value: Math.round(acceptanceRate * 0.6), target: 50 },
+        { name: 'Mar', value: Math.round(acceptanceRate * 0.75), target: 50 },
+        { name: 'Apr', value: Math.round(acceptanceRate * 0.85), target: 50 },
+        { name: 'May', value: Math.round(acceptanceRate * 0.95), target: 50 },
+        { name: 'Jun', value: acceptanceRate, target: 50 },
       ];
     }
     if (activeGraph === 'Closing') {
-      const maxVal = Math.max(32, closingRate);
       return [
-        { name: 'Jan', value: Math.round(maxVal * 0.3), target: 35 },
-        { name: 'Feb', value: Math.round(maxVal * 0.5), target: 35 },
-        { name: 'Mar', value: Math.round(maxVal * 0.7), target: 35 },
-        { name: 'Apr', value: Math.round(maxVal * 0.8), target: 35 },
-        { name: 'May', value: Math.round(maxVal * 0.9), target: 35 },
-        { name: 'Jun', value: maxVal, target: 35 },
+        { name: 'Jan', value: Math.round(closingRate * 0.3), target: 35 },
+        { name: 'Feb', value: Math.round(closingRate * 0.5), target: 35 },
+        { name: 'Mar', value: Math.round(closingRate * 0.7), target: 35 },
+        { name: 'Apr', value: Math.round(closingRate * 0.8), target: 35 },
+        { name: 'May', value: Math.round(closingRate * 0.9), target: 35 },
+        { name: 'Jun', value: closingRate, target: 35 },
       ];
     }
     if (activeGraph === 'Referral') {
-      const maxVal = Math.max(8, referralCount);
       return [
-        { name: 'Jan', value: Math.round(maxVal * 0.15), target: 8 },
-        { name: 'Feb', value: Math.round(maxVal * 0.35), target: 8 },
-        { name: 'Mar', value: Math.round(maxVal * 0.5), target: 8 },
-        { name: 'Apr', value: Math.round(maxVal * 0.65), target: 8 },
-        { name: 'May', value: Math.round(maxVal * 0.8), target: 8 },
-        { name: 'Jun', value: maxVal, target: 8 },
+        { name: 'Jan', value: Math.round(referralCount * 0.15), target: 8 },
+        { name: 'Feb', value: Math.round(referralCount * 0.35), target: 8 },
+        { name: 'Mar', value: Math.round(referralCount * 0.5), target: 8 },
+        { name: 'Apr', value: Math.round(referralCount * 0.65), target: 8 },
+        { name: 'May', value: Math.round(referralCount * 0.8), target: 8 },
+        { name: 'Jun', value: referralCount, target: 8 },
       ];
     }
-    const maxVal = Math.max(142, qualifiedCount);
     return [
-      { name: 'Jan', value: Math.round(maxVal * 0.25), target: 145 },
-      { name: 'Feb', value: Math.round(maxVal * 0.45), target: 145 },
-      { name: 'Mar', value: Math.round(maxVal * 0.6), target: 145 },
-      { name: 'Apr', value: Math.round(maxVal * 0.75), target: 145 },
-      { name: 'May', value: Math.round(maxVal * 0.9), target: 145 },
-      { name: 'Jun', value: maxVal, target: 145 },
+      { name: 'Jan', value: Math.round(qualifiedCount * 0.25), target: 145 },
+      { name: 'Feb', value: Math.round(qualifiedCount * 0.45), target: 145 },
+      { name: 'Mar', value: Math.round(qualifiedCount * 0.6), target: 145 },
+      { name: 'Apr', value: Math.round(qualifiedCount * 0.75), target: 145 },
+      { name: 'May', value: Math.round(qualifiedCount * 0.9), target: 145 },
+      { name: 'Jun', value: qualifiedCount, target: 145 },
     ];
   };
 
@@ -488,13 +484,27 @@ export function Dashboard() {
                      )}
                   >
                      <div className={cn("absolute left-0 top-0 bottom-0 w-1 transition-colors", selectedMemberId === member.id ? "bg-sky-400" : "bg-sky-200 group-hover:bg-sky-400")} />
-                     <div className="flex gap-2.5 items-center pl-2">
-                       <GripVertical className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                       <img src={member.avatar} alt={member.name} className="w-8 h-8 rounded-full border border-neutral-200 bg-neutral-50" />
-                       <div className="flex-1 min-w-0">
-                         <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{member.name}</p>
-                         <p className="text-xs text-neutral-500 truncate">{member.email || member.role}</p>
+                     <div className="flex gap-2.5 items-center pl-2 justify-between w-full">
+                       <div className="flex gap-2.5 items-center min-w-0 flex-1">
+                         <GripVertical className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                         <img src={member.avatar} alt={member.name} className="w-8 h-8 rounded-full border border-neutral-200 bg-neutral-50" />
+                         <div className="flex-1 min-w-0">
+                           <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{member.name}</p>
+                           <p className="text-xs text-neutral-500 truncate">{member.email || member.role}</p>
+                         </div>
                        </div>
+                       <button
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           if (confirm(`Are you sure you want to remove ${member.name}?`)) {
+                             removeTeamMember(member.id);
+                           }
+                         }}
+                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-red-500 shrink-0"
+                         aria-label="Remove teammate"
+                       >
+                         <Trash2 className="w-4 h-4" />
+                       </button>
                      </div>
                   </div>
                 ))}
