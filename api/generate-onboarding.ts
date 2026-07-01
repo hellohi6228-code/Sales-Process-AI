@@ -1,5 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder');
 
 const MODELS_TO_TRY = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
@@ -38,8 +43,26 @@ async function generateWithFallback(ai: GoogleGenAI, params: any): Promise<any> 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // 1. Session Authentication check
+  if (supabaseUrl && supabaseAnonKey) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: 'Missing authorization header' });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ error: 'Unauthorized user session' });
+    }
+  }
+
   try {
     const { context } = req.body;
+
+    // 2. Input Validation
+    if (context && (typeof context !== 'string' || context.length > 50000)) {
+      return res.status(400).json({ error: 'Invalid or excessive context text payload' });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -141,6 +164,6 @@ ${combinedSummaries}
     return res.json(result);
   } catch (e: any) {
     console.error('[generate-onboarding error]', e);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: 'An unexpected internal server error occurred.' });
   }
 }

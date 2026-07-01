@@ -8,15 +8,10 @@ import { Modal } from "./ui/Modal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-interface EditHistoryItem {
-  id: string;
-  initials: string;
-  name: string;
-  time: string;
-  action: string;
-}
+
 
 interface DocumentEditorProps {
+  key?: any;
   doc: any;
   onClose: () => void;
   /** Called when this doc is first created/linked to a remote ID */
@@ -101,13 +96,9 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
   })();
 
   const [content, setContent] = useState<string>(() => docState?.content ?? defaultContent);
-  const [history, setHistory] = useState<EditHistoryItem[]>(() => docState?.history ?? [
-    { id: "1", initials: "SJ", name: "Susan Johnson", time: "Initial Create", action: "Uploaded document." }
-  ]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(
     provider.isConnected() ? 'idle' : 'not_connected'
   );
-  const [commentInput, setCommentInput] = useState("");
   // Remote ID might be pre-loaded from doc, or assigned after first save
   // remoteId drives cloud sync — prefer googleDocId (from context summary docs)
   const [remoteId, setRemoteId] = useState<string | null>(
@@ -152,9 +143,9 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
   useEffect(() => {
     setDocumentStates((prev: any) => ({
       ...prev,
-      [doc.name]: { content, history },
+      [doc.name]: { content },
     }));
-  }, [content, history, doc.name, setDocumentStates]);
+  }, [content, doc.name, setDocumentStates]);
 
   // ── Auto-save to cloud (debounced 2 s after last keystroke) ───────────────
 
@@ -197,41 +188,8 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
 
   // ── Edit diff helper ───────────────────────────────────────────────────────
 
-  const computeDiffLabel = (oldStr: string, newStr: string): string | null => {
-    let start = 0;
-    while (start < oldStr.length && start < newStr.length && oldStr[start] === newStr[start]) start++;
-    let oldEnd = oldStr.length - 1;
-    let newEnd = newStr.length - 1;
-    while (oldEnd >= start && newEnd >= start && oldStr[oldEnd] === newStr[newEnd]) { oldEnd--; newEnd--; }
-    const removed = oldStr.substring(start, oldEnd + 1);
-    const added = newStr.substring(start, newEnd + 1);
-    const trunc = (s: string) => s.length > 20 ? s.substring(0, 20) + "…" : s;
-    if (!added && !removed) return null;
-    if (removed && added) return `Replaced "${trunc(removed)}" with "${trunc(added)}"`;
-    if (removed) return `Deleted "${trunc(removed)}"`;
-    if (added) return `Added "${trunc(added)}"`;
-    return null;
-  };
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
-
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
-    const diffAction = computeDiffLabel(content, newContent);
-
-    if (diffAction) {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      setHistory((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.name === "You" && last.time === timeStr && last.action === "Edited text…") return prev;
-        if (last?.name === "You" && last.time === timeStr && diffAction.startsWith("Added")) {
-          return [...prev.slice(0, -1), { ...last, action: "Edited text…" }];
-        }
-        return [...prev, { id: Math.random().toString(), initials: "Y", name: "You", time: timeStr, action: diffAction }];
-      });
-    }
-
     setContent(newContent);
     setSyncStatus('idle');
     scheduleSync(newContent);
@@ -240,16 +198,6 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
   const handleManualSave = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     syncToCloud(content);
-  };
-
-  const handleAddComment = () => {
-    if (!commentInput.trim()) return;
-    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setHistory((prev) => [
-      ...prev,
-      { id: Math.random().toString(), initials: "Y", name: "You", time: timeStr, action: `Note: "${commentInput}"` },
-    ]);
-    setCommentInput("");
   };
 
   const handleSendEmail = async () => {

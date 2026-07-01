@@ -59,6 +59,17 @@ export function Onboarding() {
       };
       // Persist to Supabase user metadata (survives logout/login)
       await supabase.auth.updateUser({ data: profile });
+
+      // Persist to public profiles table for teammate access
+      if (session?.user?.id && session?.user?.email) {
+        await supabase.from('profiles').upsert({
+          id: session.user.id,
+          email: session.user.email,
+          full_name: data.name,
+          avatar_id: data.avatarId,
+          updated_at: new Date().toISOString()
+        });
+      }
       // Also write to localStorage for instant reads without a network call
       const userId = session?.user?.id;
       if (userId) {

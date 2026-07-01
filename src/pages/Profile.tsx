@@ -115,6 +115,16 @@ export function Profile() {
       if (error) throw error;
 
       const userId = session?.user?.id;
+      // Persist to public profiles table for teammate access
+      if (userId && session?.user?.email) {
+        await supabase.from('profiles').upsert({
+          id: userId,
+          email: session.user.email,
+          full_name: fullName,
+          avatar_id: avatarId,
+          updated_at: new Date().toISOString()
+        });
+      }
       if (userId) {
         localStorage.setItem(`user_profile_${userId}`, JSON.stringify(profileData));
       }

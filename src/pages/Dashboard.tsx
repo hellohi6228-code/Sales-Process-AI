@@ -10,6 +10,7 @@ import { useAppContext } from '../AppContext';
 import { Plus, Mail } from 'lucide-react';
 import { shareFolderWithEmail, revokeFolderAccessForEmail, syncFolderStructure, listFilesInFolder, readAnyDriveFileText } from '../lib/googleDrive';
 import { sendInviteEmail, sendOnboardingEmail } from '../lib/gmail';
+import { motion, AnimatePresence } from 'motion/react';
 
 export function Dashboard() {
   const {
@@ -294,42 +295,46 @@ export function Dashboard() {
 
   const getGraphData = () => {
     if (activeGraph === 'Proposal Acceptance') {
+      const maxVal = Math.max(48, acceptanceRate);
       return [
-        { name: 'Jan', value: Math.round(acceptanceRate * 0.4), target: 50 },
-        { name: 'Feb', value: Math.round(acceptanceRate * 0.6), target: 50 },
-        { name: 'Mar', value: Math.round(acceptanceRate * 0.75), target: 50 },
-        { name: 'Apr', value: Math.round(acceptanceRate * 0.85), target: 50 },
-        { name: 'May', value: Math.round(acceptanceRate * 0.95), target: 50 },
-        { name: 'Jun', value: acceptanceRate, target: 50 },
+        { name: 'Jan', value: Math.round(maxVal * 0.45), target: 50 },
+        { name: 'Feb', value: Math.round(maxVal * 0.6), target: 50 },
+        { name: 'Mar', value: Math.round(maxVal * 0.75), target: 50 },
+        { name: 'Apr', value: Math.round(maxVal * 0.85), target: 50 },
+        { name: 'May', value: Math.round(maxVal * 0.95), target: 50 },
+        { name: 'Jun', value: maxVal, target: 50 },
       ];
     }
     if (activeGraph === 'Closing') {
+      const maxVal = Math.max(32, closingRate);
       return [
-        { name: 'Jan', value: Math.round(closingRate * 0.3), target: 35 },
-        { name: 'Feb', value: Math.round(closingRate * 0.5), target: 35 },
-        { name: 'Mar', value: Math.round(closingRate * 0.7), target: 35 },
-        { name: 'Apr', value: Math.round(closingRate * 0.8), target: 35 },
-        { name: 'May', value: Math.round(closingRate * 0.9), target: 35 },
-        { name: 'Jun', value: closingRate, target: 35 },
+        { name: 'Jan', value: Math.round(maxVal * 0.3), target: 35 },
+        { name: 'Feb', value: Math.round(maxVal * 0.5), target: 35 },
+        { name: 'Mar', value: Math.round(maxVal * 0.7), target: 35 },
+        { name: 'Apr', value: Math.round(maxVal * 0.8), target: 35 },
+        { name: 'May', value: Math.round(maxVal * 0.9), target: 35 },
+        { name: 'Jun', value: maxVal, target: 35 },
       ];
     }
     if (activeGraph === 'Referral') {
+      const maxVal = Math.max(8, referralCount);
       return [
-        { name: 'Jan', value: Math.round(referralCount * 0.1), target: 8 },
-        { name: 'Feb', value: Math.round(referralCount * 0.3), target: 8 },
-        { name: 'Mar', value: Math.round(referralCount * 0.5), target: 8 },
-        { name: 'Apr', value: Math.round(referralCount * 0.6), target: 8 },
-        { name: 'May', value: Math.round(referralCount * 0.8), target: 8 },
-        { name: 'Jun', value: referralCount, target: 8 },
+        { name: 'Jan', value: Math.round(maxVal * 0.15), target: 8 },
+        { name: 'Feb', value: Math.round(maxVal * 0.35), target: 8 },
+        { name: 'Mar', value: Math.round(maxVal * 0.5), target: 8 },
+        { name: 'Apr', value: Math.round(maxVal * 0.65), target: 8 },
+        { name: 'May', value: Math.round(maxVal * 0.8), target: 8 },
+        { name: 'Jun', value: maxVal, target: 8 },
       ];
     }
+    const maxVal = Math.max(142, qualifiedCount);
     return [
-      { name: 'Jan', value: Math.round(qualifiedCount * 0.2), target: 15 },
-      { name: 'Feb', value: Math.round(qualifiedCount * 0.4), target: 15 },
-      { name: 'Mar', value: Math.round(qualifiedCount * 0.55), target: 15 },
-      { name: 'Apr', value: Math.round(qualifiedCount * 0.7), target: 15 },
-      { name: 'May', value: Math.round(qualifiedCount * 0.85), target: 15 },
-      { name: 'Jun', value: qualifiedCount, target: 15 },
+      { name: 'Jan', value: Math.round(maxVal * 0.25), target: 145 },
+      { name: 'Feb', value: Math.round(maxVal * 0.45), target: 145 },
+      { name: 'Mar', value: Math.round(maxVal * 0.6), target: 145 },
+      { name: 'Apr', value: Math.round(maxVal * 0.75), target: 145 },
+      { name: 'May', value: Math.round(maxVal * 0.9), target: 145 },
+      { name: 'Jun', value: maxVal, target: 145 },
     ];
   };
 

@@ -648,9 +648,9 @@ export function Marketing() {
 
     return (
       <div className="flex flex-col h-full bg-[#f4f4f5]/50 dark:bg-transparent rounded-3xl pb-8">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            {!editingDoc && (
+        {!editingDoc && (
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
               <button
                 onClick={() => {
                   setSelectedFolder(null);
@@ -660,44 +660,44 @@ export function Marketing() {
               >
                 <ChevronLeft className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
               </button>
-            )}
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
-                {selectedFolder}
-              </h1>
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
+                  {selectedFolder}
+                </h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedFolder === "Proposal" && selectedActiveLead && (
+                <>
+                  <button
+                    onClick={() => {
+                      const clientEmail = leadEmails[selectedActiveLead] || "";
+                      setProposalEmail(clientEmail);
+                      setProposalSubject(`Proposal for ${selectedActiveLead} - Sales & Process AI`);
+                      
+                      const pCards = getActiveCards();
+                      const draftBody = `Hi ${selectedActiveLead},\n\nHere is our proposed strategic outline based on our discovery and solution design sessions:\n\n` +
+                        pCards.map((c: any) => `${c.title}:\n${c.text}`).join('\n\n') +
+                        `\n\nWe look forward to discussing the terms with you.\n\nBest regards,\n${session?.user?.email || 'Sales Team'}`;
+                      setProposalBody(draftBody);
+                      
+                      setIsSendProposalModalOpen(true);
+                    }}
+                    className="px-4 h-10 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-full flex items-center justify-center shadow-sm text-sm font-bold hover:bg-neutral-800 transition"
+                  >
+                    Send to Client
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
+              >
+                <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {selectedFolder === "Proposal" && selectedActiveLead && (
-              <>
-                <button
-                  onClick={() => {
-                    const clientEmail = leadEmails[selectedActiveLead] || "";
-                    setProposalEmail(clientEmail);
-                    setProposalSubject(`Proposal for ${selectedActiveLead} - Sales & Process AI`);
-                    
-                    const pCards = getActiveCards();
-                    const draftBody = `Hi ${selectedActiveLead},\n\nHere is our proposed strategic outline based on our discovery and solution design sessions:\n\n` +
-                      pCards.map((c: any) => `${c.title}:\n${c.text}`).join('\n\n') +
-                      `\n\nWe look forward to discussing the terms with you.\n\nBest regards,\n${session?.user?.email || 'Sales Team'}`;
-                    setProposalBody(draftBody);
-                    
-                    setIsSendProposalModalOpen(true);
-                  }}
-                  className="px-4 h-10 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-full flex items-center justify-center shadow-sm text-sm font-bold hover:bg-neutral-800 transition"
-                >
-                  Send to Client
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
-            >
-              <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-            </button>
-          </div>
-        </div>
+        )}
 
         <div className="relative flex w-full min-h-[450px] justify-center items-start pt-14 lg:pt-0">
           {/* Left Column */}
@@ -887,6 +887,8 @@ export function Marketing() {
             )}
           </div>
 
+          {!editingDoc ? (
+            <>
           {/* Center Column */}
               <div
                 className={cn(
@@ -1180,6 +1182,7 @@ export function Marketing() {
           <DocumentEditor key={editingDoc.name} doc={editingDoc} onClose={() => setEditingDoc(null)} />
         )}
       </div>
+    );
 
         <Modal
           isOpen={isAddModalOpen}

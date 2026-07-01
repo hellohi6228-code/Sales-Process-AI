@@ -84,7 +84,7 @@ export async function checkDriveResponse(res: Response, context: string): Promis
 export async function findOrCreateFolder(name: string, parentId?: string): Promise<string> {
   const token = await ensureValidGoogleToken();
 
-  let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`;
+  let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and description='SalesProcessAI Folder' and trashed=false`;
   if (parentId) {
     query += ` and '${parentId}' in parents`;
   } else {
@@ -110,6 +110,24 @@ export async function findOrCreateFolder(name: string, parentId?: string): Promi
       description: 'SalesProcessAI Folder',
     }),
   });
+
+  if (createRes.status === 404 && parentId) {
+    console.warn(`Parent folder ${parentId} not found (404) during folder creation. Falling back to root.`);
+    const fallbackRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [],
+        description: 'SalesProcessAI Folder',
+      }),
+    });
+    await checkDriveResponse(fallbackRes, 'creating folder fallback');
+    const fallbackData = await fallbackRes.json();
+    return fallbackData.id;
+  }
+
   await checkDriveResponse(createRes, 'creating folder');
   const createData = await createRes.json();
   return createData.id;

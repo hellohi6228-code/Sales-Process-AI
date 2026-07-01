@@ -15,6 +15,7 @@ import {
   createGoogleDocFromText,
   syncFolderStructure,
   syncProcessLeadFolder,
+  updateTeamProfileInDrive,
 } from './lib/googleDrive';
 import { TEAM_MEMBERS as DEFAULT_TEAM_MEMBERS } from './data/mockData';
 import { checkForNewReplies } from './lib/gmail';
@@ -314,7 +315,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (processRootId) {
         try {
           const perms = await getFolderPermissions(processRootId);
-          const profiles = await readTeamProfilesFromDrive();
+          
+          const emails = perms.map((p) => p.email.toLowerCase());
+          const profiles: Record<string, { name: string; avatarId: number | null }> = {};
+          
+          try {
+            if (emails.length > 0) {
+              const { data: dbProfiles } = await supabase
+                .from('profiles')
+                .select('email, full_name, avatar_id')
+                .in('email', emails);
+              if (dbProfiles) {
+                dbProfiles.forEach((p) => {
+                  profiles[p.email.toLowerCase()] = {
+                    name: p.full_name,
+                    avatarId: p.avatar_id
+                  };
+                });
+              }
+            }
+          } catch (dbErr) {
+            console.error('Failed to load profiles from Supabase:', dbErr);
+          }
+
+          try {
+            const driveProfiles = await readTeamProfilesFromDrive();
+            Object.entries(driveProfiles).forEach(([email, p]) => {
+              if (!profiles[email.toLowerCase()]) {
+                profiles[email.toLowerCase()] = {
+                  name: p.name,
+                  avatarId: p.avatarId
+                };
+              }
+            });
+          } catch (driveErr) {
+            console.error('Failed to load profiles from Drive:', driveErr);
+          }
           
           setTeamMembers((prev: any[]) => {
             const membersMap = new Map<string, any>();
@@ -587,7 +623,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!session?.user) {
         setUserProfile(null);
         setOnboardingComplete(false);
+        localStorage.removeItem('user_email');
         return;
+      }
+      if (session.user.email) {
+        localStorage.setItem('user_email', session.user.email);
       }
       const userId = session.user.id;
       const meta = session.user.user_metadata ?? {};
@@ -673,8 +713,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       // Sync all existing Drive files to app state
       syncDriveToState();
+
+      // Auto-sync profile to Drive on login/connect if set
+      if (userProfile?.full_name || userProfile?.avatar_id != null) {
+        updateTeamProfileInDrive({
+          name: userProfile.full_name || session?.user?.email?.split('@')[0] || 'Teammate',
+          avatarId: userProfile.avatar_id
+        }).catch((err) => {
+          console.error('Failed to auto-sync profile to Drive on login:', err);
+        });
+      }
     }
-  }, [googleToken]);
+  }, [googleToken, userProfile]);
 
   // --- Supabase State Synchronization Loader & Savers ---
   useEffect(() => {
@@ -940,7 +990,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const saveProposalThreads = async () => {
       try {
         for (const [leadName, threads] of Object.entries(proposalThreads)) {
-          for (const t of threads) {
+          for (const t of (threads as any[])) {
             await supabase.from('proposal_threads').upsert({
               user_id: userId,
               lead_name: leadName,

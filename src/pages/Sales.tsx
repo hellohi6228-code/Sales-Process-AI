@@ -373,9 +373,9 @@ export function Sales() {
 
     return (
       <div className="flex flex-col h-full bg-[#f4f4f5]/50 dark:bg-transparent rounded-3xl pb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            {!editingDoc && (
+        {!editingDoc && (
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
               <button
                 onClick={() => {
                   setSelectedLead(null);
@@ -386,30 +386,30 @@ export function Sales() {
               >
                 <ChevronLeft className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
               </button>
-            )}
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
-                {selectedLead}
-              </h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-500">Client Email:</span>
-                <input
-                  type="email"
-                  value={leadEmails[selectedLead] || ""}
-                  onChange={(e) => setLeadEmail(selectedLead, e.target.value)}
-                  placeholder="Enter email..."
-                  className="bg-transparent border-b border-transparent hover:border-neutral-300 dark:hover:border-neutral-600 focus:border-sky-500 text-xs text-neutral-600 dark:text-neutral-300 focus:outline-none py-0.5 px-1 transition-colors w-52 font-semibold"
-                />
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
+                  {selectedLead}
+                </h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs font-semibold text-neutral-400 dark:text-neutral-500">Client Email:</span>
+                  <input
+                    type="email"
+                    value={leadEmails[selectedLead] || ""}
+                    onChange={(e) => setLeadEmail(selectedLead, e.target.value)}
+                    placeholder="Enter email..."
+                    className="bg-transparent border-b border-transparent hover:border-neutral-300 dark:hover:border-neutral-600 focus:border-sky-500 text-xs text-neutral-600 dark:text-neutral-300 focus:outline-none py-0.5 px-1 transition-colors w-52 font-semibold"
+                  />
+                </div>
               </div>
             </div>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
+            >
+              <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
+            </button>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
-          >
-            <Plus className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-          </button>
-        </div>
+        )}
 
         <div className="relative flex w-full min-h-[450px] justify-center items-start pt-14 lg:pt-0">
           {/* Left Column */}
@@ -687,6 +687,7 @@ export function Sales() {
           <DocumentEditor key={editingDoc.name} doc={editingDoc} onClose={() => setEditingDoc(null)} />
         )}
       </div>
+    );
 
         <Modal
           isOpen={isAddModalOpen}

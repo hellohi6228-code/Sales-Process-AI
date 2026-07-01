@@ -132,3 +132,27 @@ create policy "Users can perform all actions on their own proposal threads"
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- 8. PUBLIC PROFILES
+create table public.profiles (
+  id uuid references auth.users on delete cascade primary key,
+  email text not null unique,
+  full_name text not null,
+  avatar_id integer,
+  updated_at timestamptz default now() not null
+);
+
+alter table public.profiles enable row level security;
+
+create policy "Allow read access to all authenticated users"
+  on public.profiles
+  for select
+  to authenticated
+  using (true);
+
+create policy "Allow insert/update to own profile"
+  on public.profiles
+  for all
+  to authenticated
+  using (auth.uid() = id)
+  with check (auth.uid() = id);

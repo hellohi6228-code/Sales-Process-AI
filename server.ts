@@ -4,6 +4,14 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import * as mammoth from "mammoth";
 import { google } from "googleapis";
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder');
 
 async function startServer() {
   const app = express();
@@ -13,9 +21,47 @@ async function startServer() {
 
   // API routes FIRST
   app.post("/api/generate-insight", async (req, res) => {
+    // 1. Session Authentication check
+    if (supabaseUrl && supabaseAnonKey) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).json({ error: 'Missing authorization header' });
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return res.status(401).json({ error: 'Unauthorized user session' });
+      }
+    }
+
     try {
-      const { processName, context, folderType, imageBase64, filesBase64 } =
-        req.body;
+      const { processName, context, folderType, imageBase64, filesBase64 } = req.body;
+
+      // 2. Input Validation
+      if (folderType && typeof folderType !== 'string') {
+        return res.status(400).json({ error: 'Invalid folderType parameter' });
+      }
+      if (processName && typeof processName !== 'string') {
+        return res.status(400).json({ error: 'Invalid processName parameter' });
+      }
+      if (context && (typeof context !== 'string' || context.length > 25000)) {
+        return res.status(400).json({ error: 'Invalid or excessive context text payload' });
+      }
+      if (filesBase64 && (!Array.isArray(filesBase64) || filesBase64.length > 10)) {
+        return res.status(400).json({ error: 'Invalid files array payload' });
+      }
+
+      const MAX_FILE_SIZE = 5 * 1024 * 1024;
+      const imagesToCheck = filesBase64 || (imageBase64 ? [imageBase64] : []);
+      for (const imgBase64 of imagesToCheck) {
+        if (typeof imgBase64 !== 'string') {
+          return res.status(400).json({ error: 'Invalid file payload type' });
+        }
+        const sizeBytes = Buffer.byteLength(imgBase64, 'base64');
+        if (sizeBytes > MAX_FILE_SIZE) {
+          return res.status(400).json({ error: 'File size exceeds 5MB limit' });
+        }
+      }
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -274,13 +320,46 @@ Do not reference or reuse wording from these instructions, and do not rely on fi
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: 'An unexpected internal server error occurred.' });
     }
   });
 
   app.post("/api/generate-lead-cards", async (req, res) => {
+    // 1. Session Authentication check
+    if (supabaseUrl && supabaseAnonKey) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).json({ error: 'Missing authorization header' });
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return res.status(401).json({ error: 'Unauthorized user session' });
+      }
+    }
+
     try {
       const { context, imageBase64, filesBase64 } = req.body;
+
+      // 2. Input Validation
+      if (context && (typeof context !== 'string' || context.length > 25000)) {
+        return res.status(400).json({ error: 'Invalid or excessive context text payload' });
+      }
+      if (filesBase64 && (!Array.isArray(filesBase64) || filesBase64.length > 10)) {
+        return res.status(400).json({ error: 'Invalid files array payload' });
+      }
+
+      const MAX_FILE_SIZE = 5 * 1024 * 1024;
+      const imagesToCheck = filesBase64 || (imageBase64 ? [imageBase64] : []);
+      for (const imgBase64 of imagesToCheck) {
+        if (typeof imgBase64 !== 'string') {
+          return res.status(400).json({ error: 'Invalid file payload type' });
+        }
+        const sizeBytes = Buffer.byteLength(imgBase64, 'base64');
+        if (sizeBytes > MAX_FILE_SIZE) {
+          return res.status(400).json({ error: 'File size exceeds 5MB limit' });
+        }
+      }
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -410,7 +489,7 @@ Write ONE concise sentence.`;
       res.json(result);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: 'An unexpected internal server error occurred.' });
     }
   });
 
