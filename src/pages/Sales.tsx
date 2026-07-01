@@ -203,7 +203,10 @@ export function Sales() {
         // Root context, generating new lead
         const res = await fetch("/api/generate-lead-cards", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {})
+          },
           body: JSON.stringify({
             context: contextInput,
             filesBase64,
@@ -277,7 +280,10 @@ export function Sales() {
         // Inside a lead folder
         const res = await fetch("/api/generate-insight", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {})
+          },
           body: JSON.stringify({
             processName: selectedLead,
             folderType: "Lead Data",

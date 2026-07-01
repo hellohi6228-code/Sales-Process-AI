@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export function Dashboard() {
   const {
     processFolders, leadFolders, folderAccess, setFolderAccess,
-    teamMembers, inviteTeamMember, removeTeamMember, reportGoogleError, session,
+    teamMembers, setTeamMembers, inviteTeamMember, removeTeamMember, reportGoogleError, session,
     processLeads, proposalThreads, customCardsProcess: customCards,
     customCardsLead, onboardingCards, setOnboardingCards,
   } = useAppContext();
@@ -77,6 +77,7 @@ export function Dashboard() {
 
   // Tap-to-assign (mobile fallback for native HTML5 drag-and-drop, which doesn't fire on touch)
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [draggedMemberIndex, setDraggedMemberIndex] = useState<number | null>(null);
   // Which member's name/email/remove popover is currently open (hover on desktop, tap on mobile)
   const [activeMemberPopover, setActiveMemberPopover] = useState<string | null>(null);
 
@@ -164,7 +165,10 @@ export function Dashboard() {
       
       const response = await fetch('/api/generate-onboarding', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+        },
         body: JSON.stringify({ context: combinedContent }),
       });
 
@@ -275,27 +279,7 @@ export function Dashboard() {
     if (!member) return;
 
     if (confirm(`Are you sure you want to remove ${member.name} from the team pool? This will also revoke all of their shared Google Drive folder accesses.`)) {
-      // 1. Loop through all folders they have access to and revoke permissions
-      if (member.email) {
-        const views = ['Process', 'Lead'];
-        for (const viewType of views) {
-          const folderObj = folderAccess[viewType] || {};
-          for (const [folderName, members] of Object.entries(folderObj)) {
-            if (Array.isArray(members) && members.includes(memberId)) {
-              try {
-                const folderId = await syncFolderStructure(folderName, viewType === 'Lead' ? 'LEAD' : 'PROCESS');
-                if (folderId) {
-                  await revokeFolderAccessForEmail(folderId, member.email);
-                }
-              } catch (e) {
-                console.error(`Failed to revoke Drive access for folder ${folderName}:`, e);
-              }
-            }
-          }
-        }
-      }
-
-      // 2. Remove from folderAccess state
+      // 1. Remove from folderAccess state immediately
       setFolderAccess((prev: any) => {
         const next = { ...prev };
         ['Process', 'Lead'].forEach((viewType) => {
@@ -311,8 +295,34 @@ export function Dashboard() {
         return next;
       });
 
-      // 3. Remove from teamMembers state pool
+      // 2. Remove from teamMembers state pool immediately
       removeTeamMember(memberId);
+
+      // 3. Revoke permissions on Google Drive in the background (non-blocking)
+      if (member.email) {
+        (async () => {
+          try {
+            const views = ['Process', 'Lead'];
+            for (const viewType of views) {
+              const folderObj = folderAccess[viewType] || {};
+              for (const [folderName, members] of Object.entries(folderObj)) {
+                if (Array.isArray(members) && members.includes(memberId)) {
+                  try {
+                    const folderId = await syncFolderStructure(folderName, viewType === 'Lead' ? 'LEAD' : 'PROCESS');
+                    if (folderId) {
+                      await revokeFolderAccessForEmail(folderId, member.email);
+                    }
+                  } catch (e) {
+                    console.error(`Failed to revoke Drive access for folder ${folderName}:`, e);
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Failed to execute background permission revocation:", err);
+          }
+        })();
+      }
     }
   };
 
@@ -518,11 +528,30 @@ export function Dashboard() {
                 Tap a teammate, then tap a folder to grant access. (Drag works on desktop too.)
               </p>
               <div className="space-y-3 min-h-[300px] rounded-xl transition-colors">
-                {teamMembers.map((member: any) => (
+                {teamMembers.map((member: any, idx: number) => (
                   <div 
                      key={member.id} 
                      draggable 
-                     onDragStart={(e) => e.dataTransfer.setData('memberId', member.id)}
+                     onDragStart={(e) => {
+                       e.dataTransfer.setData('memberId', member.id);
+                       setDraggedMemberIndex(idx);
+                     }}
+                     onDragOver={(e) => {
+                       if (draggedMemberIndex !== null) {
+                         e.preventDefault();
+                       }
+                     }}
+                     onDrop={(e) => {
+                       if (draggedMemberIndex !== null && draggedMemberIndex !== idx) {
+                         e.preventDefault();
+                         const updated = [...teamMembers];
+                         const [removed] = updated.splice(draggedMemberIndex, 1);
+                         updated.splice(idx, 0, removed);
+                         setTeamMembers(updated);
+                         setDraggedMemberIndex(null);
+                       }
+                     }}
+                     onDragEnd={() => setDraggedMemberIndex(null)}
                      onClick={() => setSelectedMemberId((prev) => (prev === member.id ? null : member.id))}
                      className={cn(
                        "bg-white/80 border p-3.5 rounded-xl shadow-sm backdrop-blur-md cursor-grab active:cursor-grabbing hover:bg-white transition-all group relative overflow-hidden text-left",
@@ -532,7 +561,7 @@ export function Dashboard() {
                      <div className={cn("absolute left-0 top-0 bottom-0 w-1 transition-colors", selectedMemberId === member.id ? "bg-sky-400" : "bg-sky-200 group-hover:bg-sky-400")} />
                      <div className="flex gap-2.5 items-center pl-2 justify-between w-full">
                        <div className="flex gap-2.5 items-center min-w-0 flex-1">
-                         <GripVertical className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                         <GripVertical className="w-4 h-4 text-neutral-400 flex-shrink-0 cursor-grab hover:text-sky-500 active:cursor-grabbing" />
                          <img src={member.avatar} alt={member.name} className="w-8 h-8 rounded-full border border-neutral-200 bg-neutral-50" />
                          <div className="flex-1 min-w-0">
                            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{member.name}</p>
@@ -690,7 +719,7 @@ export function Dashboard() {
             setIsOnboardingModalOpen(false);
           }
         }}
-        title="Teammate Onboarding & Sharing"
+        title="Teammate Onboarding"
         className="sm:max-w-xl"
       >
         <div className="space-y-6">

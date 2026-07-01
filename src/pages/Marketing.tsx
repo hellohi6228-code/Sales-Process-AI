@@ -401,7 +401,10 @@ export function Marketing() {
 
       const res = await fetch("/api/generate-insight", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {})
+        },
         body: JSON.stringify({
           folderType: selectedFolder,
           context: finalContext,
@@ -607,7 +610,10 @@ export function Marketing() {
         setTimeout(() => {
           fetch("/api/generate-insight", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {})
+            },
             body: JSON.stringify({
               folderType: "Audience",
               context: posStr,

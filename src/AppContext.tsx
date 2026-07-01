@@ -317,6 +317,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const perms = await getFolderPermissions(processRootId);
           
           const emails = perms.map((p) => p.email.toLowerCase());
+          teamMembers.forEach((m: any) => {
+            if (m.email) {
+              const e = m.email.toLowerCase();
+              if (!emails.includes(e)) {
+                emails.push(e);
+              }
+            }
+          });
           const profiles: Record<string, { name: string; avatarId: number | null }> = {};
           
           try {
