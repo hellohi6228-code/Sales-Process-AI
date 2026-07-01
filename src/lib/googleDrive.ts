@@ -84,7 +84,7 @@ export async function checkDriveResponse(res: Response, context: string): Promis
 export async function findOrCreateFolder(name: string, parentId?: string): Promise<string> {
   const token = await ensureValidGoogleToken();
 
-  let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and description='SalesProcessAI Folder' and trashed=false`;
+  let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`;
   if (parentId) {
     query += ` and '${parentId}' in parents`;
   } else {
@@ -92,13 +92,14 @@ export async function findOrCreateFolder(name: string, parentId?: string): Promi
   }
 
   const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,description)`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   await checkDriveResponse(searchRes, 'searching for folder');
   const searchData = await searchRes.json();
 
-  if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
+  const match = (searchData.files || []).find((f: any) => f.description === 'SalesProcessAI Folder');
+  if (match) return match.id;
 
   const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',

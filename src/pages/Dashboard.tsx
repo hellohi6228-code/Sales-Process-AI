@@ -270,6 +270,52 @@ export function Dashboard() {
     }
   };
 
+  const handleRemoveMember = async (memberId: string) => {
+    const member = teamMembers.find((m: any) => m.id === memberId);
+    if (!member) return;
+
+    if (confirm(`Are you sure you want to remove ${member.name} from the team pool? This will also revoke all of their shared Google Drive folder accesses.`)) {
+      // 1. Loop through all folders they have access to and revoke permissions
+      if (member.email) {
+        const views = ['Process', 'Lead'];
+        for (const viewType of views) {
+          const folderObj = folderAccess[viewType] || {};
+          for (const [folderName, members] of Object.entries(folderObj)) {
+            if (Array.isArray(members) && members.includes(memberId)) {
+              try {
+                const folderId = await syncFolderStructure(folderName, viewType === 'Lead' ? 'LEAD' : 'PROCESS');
+                if (folderId) {
+                  await revokeFolderAccessForEmail(folderId, member.email);
+                }
+              } catch (e) {
+                console.error(`Failed to revoke Drive access for folder ${folderName}:`, e);
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Remove from folderAccess state
+      setFolderAccess((prev: any) => {
+        const next = { ...prev };
+        ['Process', 'Lead'].forEach((viewType) => {
+          if (next[viewType]) {
+            const updatedView: Record<string, string[]> = {};
+            Object.keys(next[viewType]).forEach((folderName) => {
+              const members = next[viewType][folderName] || [];
+              updatedView[folderName] = members.filter((id: string) => id !== memberId);
+            });
+            next[viewType] = updatedView;
+          }
+        });
+        return next;
+      });
+
+      // 3. Remove from teamMembers state pool
+      removeTeamMember(memberId);
+    }
+  };
+
   const handleDropToFolder = (e: React.DragEvent<HTMLDivElement>, folderName: string) => {
     e.preventDefault();
     const memberId = e.dataTransfer.getData('memberId');
@@ -496,9 +542,7 @@ export function Dashboard() {
                        <button
                          onClick={(e) => {
                            e.stopPropagation();
-                           if (confirm(`Are you sure you want to remove ${member.name}?`)) {
-                             removeTeamMember(member.id);
-                           }
+                           handleRemoveMember(member.id);
                          }}
                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-red-500 shrink-0"
                          aria-label="Remove teammate"
