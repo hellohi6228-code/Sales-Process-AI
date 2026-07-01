@@ -281,20 +281,8 @@ export function Dashboard() {
     if (!inviteEmail) return;
     setIsInviting(true);
     try {
-      const inviterEmail = session?.user?.email || localStorage.getItem('user_email') || 'A teammate';
-      try {
-        await sendInviteEmail({
-          to: inviteEmail,
-          inviteName: inviteName || 'Teammate',
-          inviterEmail,
-        });
-      } catch (err) {
-        console.error('Failed to send email invite:', err);
-        reportGoogleError?.(err, 'Failed to send email invitation');
-      }
-
-      // Just adds them to the team pool. No Drive access is granted here —
-      // access is only granted per-folder, via tap-to-assign or drag-and-drop below.
+      // Just adds them to the team pool. No Drive access or email is triggered here —
+      // access and onboarding emails are only sent per-folder, via tap-to-assign or drag-and-drop.
       inviteTeamMember(inviteName || inviteEmail, inviteEmail);
       setInviteName('');
       setInviteEmail('');
@@ -307,40 +295,40 @@ export function Dashboard() {
   const getGraphData = () => {
     if (activeGraph === 'Proposal Acceptance') {
       return [
-        { name: 'Jan', value: 40, target: 50 },
-        { name: 'Feb', value: 42, target: 50 },
-        { name: 'Mar', value: 45, target: 50 },
-        { name: 'Apr', value: 48, target: 50 },
-        { name: 'May', value: 50, target: 50 },
+        { name: 'Jan', value: Math.round(acceptanceRate * 0.4), target: 50 },
+        { name: 'Feb', value: Math.round(acceptanceRate * 0.6), target: 50 },
+        { name: 'Mar', value: Math.round(acceptanceRate * 0.75), target: 50 },
+        { name: 'Apr', value: Math.round(acceptanceRate * 0.85), target: 50 },
+        { name: 'May', value: Math.round(acceptanceRate * 0.95), target: 50 },
         { name: 'Jun', value: acceptanceRate, target: 50 },
       ];
     }
     if (activeGraph === 'Closing') {
       return [
-        { name: 'Jan', value: 25, target: 35 },
-        { name: 'Feb', value: 28, target: 35 },
-        { name: 'Mar', value: 30, target: 35 },
-        { name: 'Apr', value: 32, target: 35 },
-        { name: 'May', value: 35, target: 35 },
+        { name: 'Jan', value: Math.round(closingRate * 0.3), target: 35 },
+        { name: 'Feb', value: Math.round(closingRate * 0.5), target: 35 },
+        { name: 'Mar', value: Math.round(closingRate * 0.7), target: 35 },
+        { name: 'Apr', value: Math.round(closingRate * 0.8), target: 35 },
+        { name: 'May', value: Math.round(closingRate * 0.9), target: 35 },
         { name: 'Jun', value: closingRate, target: 35 },
       ];
     }
     if (activeGraph === 'Referral') {
       return [
-        { name: 'Jan', value: 2, target: 8 },
-        { name: 'Feb', value: 3, target: 8 },
-        { name: 'Mar', value: 4, target: 8 },
-        { name: 'Apr', value: 5, target: 8 },
-        { name: 'May', value: 6, target: 8 },
+        { name: 'Jan', value: Math.round(referralCount * 0.1), target: 8 },
+        { name: 'Feb', value: Math.round(referralCount * 0.3), target: 8 },
+        { name: 'Mar', value: Math.round(referralCount * 0.5), target: 8 },
+        { name: 'Apr', value: Math.round(referralCount * 0.6), target: 8 },
+        { name: 'May', value: Math.round(referralCount * 0.8), target: 8 },
         { name: 'Jun', value: referralCount, target: 8 },
       ];
     }
     return [
-      { name: 'Jan', value: 5, target: 15 },
-      { name: 'Feb', value: 8, target: 15 },
-      { name: 'Mar', value: 12, target: 15 },
-      { name: 'Apr', value: 15, target: 15 },
-      { name: 'May', value: 18, target: 15 },
+      { name: 'Jan', value: Math.round(qualifiedCount * 0.2), target: 15 },
+      { name: 'Feb', value: Math.round(qualifiedCount * 0.4), target: 15 },
+      { name: 'Mar', value: Math.round(qualifiedCount * 0.55), target: 15 },
+      { name: 'Apr', value: Math.round(qualifiedCount * 0.7), target: 15 },
+      { name: 'May', value: Math.round(qualifiedCount * 0.85), target: 15 },
       { name: 'Jun', value: qualifiedCount, target: 15 },
     ];
   };
@@ -544,42 +532,44 @@ export function Dashboard() {
                               {membersWithAccess.map((member: any, idx: number) => {
                                  const key = `${folder}-${member?.id}`;
                                  const isOpen = activeMemberPopover === key;
-
-                                 return (
-                                   <div key={idx} className="relative">
-                                     <img
-                                       src={member?.avatar}
-                                       alt={member?.name}
-                                       onMouseEnter={() => setActiveMemberPopover(key)}
-                                       onMouseLeave={() => setActiveMemberPopover((prev) => (prev === key ? null : prev))}
-                                       onClick={(e) => {
-                                         e.preventDefault();
-                                         e.stopPropagation();
-                                         setActiveMemberPopover((prev) => (prev === key ? null : key));
-                                       }}
-                                       className="inline-block w-8 h-8 rounded-full border-2 border-white dark:border-neutral-900 bg-white/50 cursor-pointer"
-                                     />
-                                     {isOpen && (
-                                       <div
-                                         className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg p-3 z-50 text-left"
-                                         onClick={(e) => e.stopPropagation()}
-                                       >
-                                         <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">{member?.name}</p>
-                                         <p className="text-[11px] text-neutral-500 truncate mb-2">{member?.email}</p>
-                                         <button
-                                           onClick={(e) => {
-                                             e.stopPropagation();
-                                             removeMemberFromFolder(member?.id, folder);
-                                             setActiveMemberPopover(null);
-                                           }}
-                                           className="w-full text-[11px] font-bold text-red-500 hover:text-red-600 border border-red-200 hover:bg-red-50 rounded-lg py-1.5 transition"
-                                         >
-                                           Remove access
-                                         </button>
-                                       </div>
-                                     )}
-                                   </div>
-                                 );
+                                  return (
+                                    <div 
+                                      key={idx} 
+                                      className="relative"
+                                      onMouseEnter={() => setActiveMemberPopover(key)}
+                                      onMouseLeave={() => setActiveMemberPopover((prev) => (prev === key ? null : prev))}
+                                    >
+                                      <img
+                                        src={member?.avatar}
+                                        alt={member?.name}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setActiveMemberPopover((prev) => (prev === key ? null : key));
+                                        }}
+                                        className="inline-block w-8 h-8 rounded-full border-2 border-white dark:border-neutral-900 bg-white/50 cursor-pointer"
+                                      />
+                                      {isOpen && (
+                                        <div
+                                          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg p-3 z-50 text-left"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">{member?.name}</p>
+                                          <p className="text-[11px] text-neutral-500 truncate mb-2">{member?.email}</p>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              removeMemberFromFolder(member?.id, folder);
+                                              setActiveMemberPopover(null);
+                                            }}
+                                            className="w-full text-[11px] font-bold text-red-500 hover:text-red-600 border border-red-200 hover:bg-red-50 rounded-lg py-1.5 transition"
+                                          >
+                                            Remove access
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
                                })}
                             </div>
                           ) : (
@@ -705,21 +695,32 @@ export function Dashboard() {
 
           {onboardingStatus === 'ready' && onboardingCardsPreview.length > 0 && (
             <div className="space-y-6">
-              <div className="text-center">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Onboarding Insights Preview</h4>
-                <p className="text-[11px] text-neutral-500 mt-1">Review the five cards the teammate will receive and swipe/click to browse.</p>
-              </div>
-
               <div className="flex flex-col items-center justify-center relative min-h-[220px]">
                 <div className="text-xs font-bold text-neutral-500 mb-2">
                   {onboardingCardIndex + 1} / {onboardingCardsPreview.length}
                 </div>
-                <div className="relative w-full max-w-[320px] aspect-[4/3] bg-gradient-to-tr from-sky-50 to-blue-50 dark:from-neutral-800 dark:to-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-3xl p-6 shadow-md flex flex-col justify-between overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-400 to-blue-500" />
+                <motion.div
+                  key={onboardingCardIndex}
+                  initial={{ scale: 0.95, opacity: 0, x: 20 }}
+                  animate={{ scale: 1, opacity: 1, x: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, x: -20 }}
+                  transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  onDragEnd={(e, { offset, velocity }) => {
+                    const swipe = offset.x;
+                    if (swipe < -50 || velocity.x < -500) {
+                      setOnboardingCardIndex(prev => prev < onboardingCardsPreview.length - 1 ? prev + 1 : 0);
+                    } else if (swipe > 50 || velocity.x > 500) {
+                      setOnboardingCardIndex(prev => prev > 0 ? prev - 1 : onboardingCardsPreview.length - 1);
+                    }
+                  }}
+                  className="relative w-full max-w-[320px] aspect-[4/3] bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-3xl p-6 shadow-md flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing"
+                >
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-400 to-blue-500 opacity-20" />
                   
-                  <div className="space-y-2">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-sky-500 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded">Card Insight</span>
-                    <h5 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 mt-1">{onboardingCardsPreview[onboardingCardIndex]?.title}</h5>
+                  <div className="space-y-2 mt-2">
+                    <h5 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{onboardingCardsPreview[onboardingCardIndex]?.title}</h5>
                     <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed mt-1">{onboardingCardsPreview[onboardingCardIndex]?.text}</p>
                   </div>
                   
@@ -730,7 +731,6 @@ export function Dashboard() {
                     >
                       ← Prev
                     </button>
-                    <span className="font-semibold uppercase tracking-widest text-[8px]">Teammate Onboarding</span>
                     <button 
                       onClick={() => setOnboardingCardIndex(prev => prev < onboardingCardsPreview.length - 1 ? prev + 1 : 0)}
                       className="hover:text-sky-500 font-bold transition-colors"
@@ -738,22 +738,16 @@ export function Dashboard() {
                       Next →
                     </button>
                   </div>
-                </div>
+                </motion.div>
               </div>
 
               <div className="flex gap-3">
                 <button
                   onClick={confirmOnboardingAccess}
-                  className="flex-1 py-3 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-md flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-md flex items-center justify-center gap-2"
                 >
                   <Mail className="w-4 h-4" />
-                  Send Onboarding Email & Share
-                </button>
-                <button
-                  onClick={() => setIsOnboardingModalOpen(false)}
-                  className="px-4 py-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-850 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold rounded-xl text-sm transition"
-                >
-                  Cancel
+                  Share
                 </button>
               </div>
             </div>

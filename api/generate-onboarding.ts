@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
 
-const MODELS_TO_TRY = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash'];
+const MODELS_TO_TRY = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 async function generateWithFallback(ai: GoogleGenAI, params: any): Promise<any> {
   let lastError: any;
@@ -116,8 +116,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 You are a technical project lead who works with a large number of individual contributors in a highly flexible work format. Summarize ALL context within a project folder and produce five cards containing the most important key information for onboarding a new teammate very IMMEDIATELY.
 
 Create the most relevant titles based on the available information.
-Use short, descriptive titles for each card.
-Write one concise sentence per card.
+Do not use generic titles (e.g. Card 1, Card 2, Introduction, Overview, Objectives).
+Each card must have a specific, high-impact title and exactly one concise, high-value sentence describing the crux of that topic (like a pitch or key presentation takeaway) so the teammate can immediately understand the project status and start coding/working.
+Do not add any additional flavor, prefix, numbering, or introductory text. Just output the clean data.
 
 Here is the summarized and chunked project context:
 ${combinedSummaries}

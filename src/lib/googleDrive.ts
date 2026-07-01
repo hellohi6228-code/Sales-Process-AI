@@ -85,7 +85,11 @@ export async function findOrCreateFolder(name: string, parentId?: string): Promi
   const token = await ensureValidGoogleToken();
 
   let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`;
-  if (parentId) query += ` and '${parentId}' in parents`;
+  if (parentId) {
+    query += ` and '${parentId}' in parents`;
+  } else {
+    query += ` and 'me' in owners`;
+  }
 
   const searchRes = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`,
@@ -103,6 +107,7 @@ export async function findOrCreateFolder(name: string, parentId?: string): Promi
       name,
       mimeType: 'application/vnd.google-apps.folder',
       parents: parentId ? [parentId] : [],
+      description: 'SalesProcessAI Folder',
     }),
   });
   await checkDriveResponse(createRes, 'creating folder');
@@ -364,7 +369,11 @@ export async function listSubFolders(parentId: string): Promise<Array<{ id: stri
 export async function findFolder(name: string, parentId?: string): Promise<string | null> {
   const token = await ensureValidGoogleToken();
   let query = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`;
-  if (parentId) query += ` and '${parentId}' in parents`;
+  if (parentId) {
+    query += ` and '${parentId}' in parents`;
+  } else {
+    query += ` and 'me' in owners`;
+  }
 
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1`,
@@ -395,8 +404,8 @@ export async function listFilesInFolderRecursive(folderId: string): Promise<Arra
 export async function listSharedFolders(): Promise<Array<{ id: string; name: string }>> {
   try {
     const token = await ensureValidGoogleToken();
-    // 1. Get folders shared with me directly
-    const query = `mimeType='application/vnd.google-apps.folder' and sharedWithMe=true and trashed=false`;
+    // 1. Get folders shared with me directly that match our application ID tag
+    const query = `mimeType='application/vnd.google-apps.folder' and sharedWithMe=true and trashed=false and description='SalesProcessAI Folder'`;
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=100`,
       { headers: { Authorization: `Bearer ${token}` } }
@@ -411,7 +420,7 @@ export async function listSharedFolders(): Promise<Array<{ id: string; name: str
     for (const folder of directFolders) {
       if (folder.name === 'PROCESS' || folder.name === 'LEAD') {
         try {
-          const subquery = `mimeType='application/vnd.google-apps.folder' and '${folder.id}' in parents and trashed=false`;
+          const subquery = `mimeType='application/vnd.google-apps.folder' and '${folder.id}' in parents and trashed=false and description='SalesProcessAI Folder'`;
           const subres = await fetch(
             `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subquery)}&fields=files(id,name)&pageSize=100`,
             { headers: { Authorization: `Bearer ${token}` } }
@@ -462,37 +471,54 @@ export async function updateTeamProfileInDrive(profile: { name: string, avatarId
     const token = await getGoogleToken();
     if (!token) return;
 
-    const processRootId = await getRootAppFolder('PROCESS');
-    const files = await listFilesInFolder(processRootId);
-    let profileFile = files.find(f => f.name === 'team_profiles.json');
+    // 1. Update in our own PROCESS root folder
+    const ownProcessRootId = await getRootAppFolder('PROCESS');
+    await updateSingleProfileInFolder(ownProcessRootId, profile);
 
-    let profiles: Record<string, any> = {};
-    if (profileFile) {
-      try {
-        const text = await getFileContent(profileFile.id);
-        profiles = JSON.parse(text);
-      } catch (e) {
-        console.error('Failed to parse existing team profiles:', e);
+    // 2. Also find any shared PROCESS root folders, and write to them as well!
+    const shared = await listSharedFolders();
+    for (const folder of shared) {
+      if (folder.name === 'PROCESS') {
+        try {
+          await updateSingleProfileInFolder(folder.id, profile);
+        } catch (err) {
+          console.error(`Failed to update profile in shared PROCESS folder ${folder.id}:`, err);
+        }
       }
-    }
-
-    const email = localStorage.getItem('user_email') || '';
-    if (!email) return;
-
-    profiles[email.toLowerCase()] = {
-      name: profile.name,
-      avatarId: profile.avatarId,
-      updatedAt: Date.now()
-    };
-
-    const content = JSON.stringify(profiles, null, 2);
-    if (profileFile) {
-      await updateFileContent(profileFile.id, content);
-    } else {
-      await uploadToDrive('team_profiles.json', content, processRootId, 'application/json');
     }
   } catch (e) {
     console.error('Failed to update team profile in Drive:', e);
+  }
+}
+
+async function updateSingleProfileInFolder(folderId: string, profile: { name: string, avatarId: number | null }) {
+  const files = await listFilesInFolder(folderId);
+  let profileFile = files.find(f => f.name === 'team_profiles.json');
+
+  let profiles: Record<string, any> = {};
+  if (profileFile) {
+    try {
+      const text = await getFileContent(profileFile.id);
+      profiles = JSON.parse(text);
+    } catch (e) {
+      console.error('Failed to parse existing team profiles:', e);
+    }
+  }
+
+  const email = localStorage.getItem('user_email') || '';
+  if (!email) return;
+
+  profiles[email.toLowerCase()] = {
+    name: profile.name,
+    avatarId: profile.avatarId,
+    updatedAt: Date.now()
+  };
+
+  const content = JSON.stringify(profiles, null, 2);
+  if (profileFile) {
+    await updateFileContent(profileFile.id, content);
+  } else {
+    await uploadToDrive('team_profiles.json', content, folderId, 'application/json');
   }
 }
 

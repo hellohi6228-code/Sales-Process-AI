@@ -192,9 +192,9 @@ export async function sendOnboardingEmail(opts: {
   const token = await ensureValidGoogleToken();
 
   const cardsHtml = opts.onboardingCards.map((c, i) => `
-    <div style="margin-bottom: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #f8fafc; border-left: 4px solid #0ea5e9;">
+    <div style="margin-bottom: 16px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; border-left: 4px solid #0ea5e9;">
       <h3 style="margin: 0 0 6px 0; font-size: 14px; color: #0f172a; font-weight: bold;">
-        Card ${i + 1}: ${c.title}
+        ${c.title}
       </h3>
       <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
         ${c.text}
@@ -217,11 +217,6 @@ export async function sendOnboardingEmail(opts: {
       </div>
 
       <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
-      
-      <h3 style="color: #0f172a; font-size: 16px; margin: 0 0 16px 0;">Teammate Onboarding Insights</h3>
-      <p style="font-size: 13px; color: #64748b; margin-bottom: 16px; line-height: 1.5;">
-        Here are the five key onboarding cards compiled from the folder contents to help you get started immediately:
-      </p>
       
       ${cardsHtml}
 

@@ -43,6 +43,7 @@ export function Sales() {
   const [editingDoc, setEditingDoc] = useState<any>(null); // { name: string, url: string }
   const [isEditingCard, setIsEditingCard] = useState(false);
   const [editTitle, setEditTitle] = useState("");
+  const [isInputContextDocsExpanded, setIsInputContextDocsExpanded] = useState(false);
   const [editText, setEditText] = useState("");
   const [editScore, setEditScore] = useState("");
 
@@ -85,25 +86,42 @@ export function Sales() {
         const driveFiles = await listFilesInFolder(folderId);
         const inputContextDir = driveFiles.find(f => f.name === "Input Context" && f.mimeType === 'application/vnd.google-apps.folder');
         
-        let allFiles = driveFiles.filter(f => f.name !== "Input Context");
+        let rootFiles = driveFiles.filter(f => f.name !== "Input Context");
+        let contextFiles: any[] = [];
         
         if (inputContextDir) {
           try {
-            const contextFiles = await listFilesInFolder(inputContextDir.id);
-            allFiles = [...allFiles, ...contextFiles];
+            contextFiles = await listFilesInFolder(inputContextDir.id);
           } catch (err) {
             console.error("Failed to list files in Input Context subfolder:", err);
           }
         }
 
         // Always replace with latest from Drive so dropped files appear immediately
-        const docFiles = allFiles.map((f) => ({
+        const docFiles = rootFiles.map((f) => ({
           name: f.name,
           url: f.mimeType === 'application/vnd.google-apps.document'
             ? `https://docs.google.com/document/d/${f.id}/edit`
             : `https://drive.google.com/file/d/${f.id}/view`,
           googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+          mimeType: f.mimeType,
         }));
+
+        if (inputContextDir) {
+          docFiles.push({
+            name: "Input Context",
+            isInputContextFolder: true,
+            googleDocId: null,
+            files: contextFiles.map((f) => ({
+              name: f.name,
+              url: f.mimeType === 'application/vnd.google-apps.document'
+                ? `https://docs.google.com/document/d/${f.id}/edit`
+                : `https://drive.google.com/file/d/${f.id}/view`,
+              googleDocId: f.mimeType === 'application/vnd.google-apps.document' ? f.id : null,
+              mimeType: f.mimeType,
+            }))
+          } as any);
+        }
 
         if (viewMode === 'shared') {
           setSharedLeadSourceDocs((prev: Record<string, any[]>) => ({
@@ -357,16 +375,18 @@ export function Sales() {
       <div className="flex flex-col h-full bg-[#f4f4f5]/50 dark:bg-transparent rounded-3xl pb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => {
-                setSelectedLead(null);
-                setCardIndex(0);
-                setIsContextExpanded(false);
-              }}
-              className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
-            >
-              <ChevronLeft className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-            </button>
+            {!editingDoc && (
+              <button
+                onClick={() => {
+                  setSelectedLead(null);
+                  setCardIndex(0);
+                  setIsContextExpanded(false);
+                }}
+                className="w-10 h-10 bg-white/60 dark:bg-neutral-800/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm border border-neutral-200/50 hover:bg-white dark:hover:bg-neutral-700 transition"
+              >
+                <ChevronLeft className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
+              </button>
+            )}
             <div>
               <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
                 {selectedLead}
@@ -392,8 +412,6 @@ export function Sales() {
         </div>
 
         <div className="relative flex w-full min-h-[450px] justify-center items-start pt-14 lg:pt-0">
-          {!editingDoc ? (
-            <>
           {/* Left Column */}
           <div className="absolute left-0 top-0 lg:static lg:flex-1 z-20 flex flex-col items-start w-auto">
             <div className="w-full relative">
@@ -419,8 +437,51 @@ export function Sales() {
                           Source Documents
                         </h4>
 
-                        {activeLeadDocs?.map(
-                          (doc: any, i: number) => (
+                        {activeLeadDocs?.map((doc: any, i: number) => {
+                          if (doc.isInputContextFolder) {
+                            return (
+                              <div key={i} className="flex flex-col gap-1 w-full mt-2">
+                                <button
+                                  onClick={() => setIsInputContextDocsExpanded(prev => !prev)}
+                                  className="w-full text-left text-sm font-bold text-neutral-700 dark:text-neutral-300 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-between bg-neutral-100/50 dark:bg-neutral-800/40 px-3 py-2 rounded-xl"
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <FolderOpen className={cn("w-4 h-4 text-sky-500 transition-transform flex-shrink-0", isInputContextDocsExpanded ? "rotate-90" : "")} />
+                                    <span className="truncate">{doc.name}</span>
+                                  </div>
+                                  <span className="text-[10px] text-neutral-400 shrink-0 ml-2">
+                                    {isInputContextDocsExpanded ? "Hide" : "Show"}
+                                  </span>
+                                </button>
+
+                                {isInputContextDocsExpanded && (
+                                  <div className="pl-4 border-l border-neutral-200 dark:border-neutral-700/60 mt-1 space-y-1.5 py-1">
+                                    {doc.files && doc.files.map((subDoc: any, subIdx: number) => (
+                                      <button
+                                        key={subIdx}
+                                        onClick={() => {
+                                          setEditingDoc(subDoc);
+                                          setIsContextExpanded(false);
+                                        }}
+                                        className="w-full text-left text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-between"
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400/80 flex-shrink-0"></span>
+                                          <span className="truncate">{subDoc.name}</span>
+                                        </div>
+                                        <span className="text-[9px] text-neutral-400 shrink-0 ml-1">View</span>
+                                      </button>
+                                    ))}
+                                    {(!doc.files || doc.files.length === 0) && (
+                                      <div className="text-[11px] text-neutral-500 italic pl-3">No context files</div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
                             <div key={i} className="flex flex-col gap-1 w-full mt-2">
                               <button
                                 onClick={() => {
@@ -436,8 +497,8 @@ export function Sales() {
                                 <span className="text-[10px] text-neutral-400 font-semibold shrink-0 ml-2">Edit</span>
                               </button>
                             </div>
-                          ),
-                        )}
+                          );
+                        })}
 
                         {(!activeLeadDocs ||
                           activeLeadDocs.length === 0) && (
@@ -451,7 +512,9 @@ export function Sales() {
             </div>
           </div>
 
-          {/* Center Column */}
+          {!editingDoc ? (
+            <>
+              {/* Center Column */}
               <div className="w-full max-w-[320px] sm:max-w-[360px] md:max-w-[400px] shrink-0 flex flex-col items-center justify-start relative z-10 px-2 lg:px-4 mx-auto">
                 {cards.length > 0 ? (
                   <div className="relative flex flex-col w-full items-center">

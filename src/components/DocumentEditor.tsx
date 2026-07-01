@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { X, Cloud, CloudOff, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { X, Cloud, CloudOff, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Mail } from "lucide-react";
 import { useAppContext } from "../AppContext";
 import { getActiveProvider, getProviderByType, SyncStatus, ProviderType } from "../lib/storage";
 import { GoogleDriveError } from "../lib/googleDrive";
+import { sendProposalEmail } from "../lib/gmail";
+import { Modal } from "./ui/Modal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,7 +78,7 @@ function SyncBadge({ status, providerLabel, onRetry }: {
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId }: DocumentEditorProps) {
-  const { documentStates, setDocumentStates, reportGoogleError, reconnectGoogle } = useAppContext();
+  const { documentStates, setDocumentStates, reportGoogleError, reconnectGoogle, leadEmails, addProposalThread, session } = useAppContext();
 
   // Determine which storage provider to use.
   // If the doc already has a known provider, use that; otherwise use the active one.
@@ -111,6 +113,12 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
   const [remoteId, setRemoteId] = useState<string | null>(
     doc.googleDocId ?? doc.remoteId ?? null
   );
+
+  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>(content);
@@ -244,10 +252,48 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
     setCommentInput("");
   };
 
+  const handleSendEmail = async () => {
+    if (!emailTo) {
+      alert("Please enter a recipient email address.");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const thread = await sendProposalEmail({
+        to: emailTo,
+        subject: emailSubject,
+        bodyHtml: emailBody.replace(/\n/g, "<br>"),
+        leadName: doc.lead || "General Lead",
+      });
+      
+      if (addProposalThread && doc.lead) {
+        addProposalThread(doc.lead, {
+          threadId: thread.threadId,
+          leadName: doc.lead,
+          to: emailTo,
+          subject: emailSubject,
+          sentAt: new Date().toISOString(),
+        });
+      }
+      
+      alert("Proposal sent successfully via Gmail!");
+      setIsSendModalOpen(false);
+    } catch (err) {
+      console.error("Failed to send proposal email:", err);
+      alert("Failed to send proposal email. Please check your Google Drive/Gmail integration.");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const driveFileId = doc.id || doc.url?.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+  const isPdf = doc.mimeType === 'application/pdf' || doc.url?.includes('application/pdf') || doc.name?.toLowerCase().endsWith('.pdf');
+  const isImage = doc.mimeType?.startsWith('image/') || doc.url?.startsWith('data:image/') || doc.name?.toLowerCase().match(/\.(png|jpe?g|gif|webp)$/);
+
   return (
-    <div className="flex-1 lg:flex-[3] flex flex-col xl:flex-row w-full bg-white dark:bg-neutral-900 rounded-[24px] shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden relative min-h-[600px] lg:max-h-[800px] ml-0 xl:ml-6">
+    <div className="flex-1 lg:flex-[3] flex flex-col w-full bg-white dark:bg-neutral-900 rounded-[24px] shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden relative min-h-[600px] lg:max-h-[800px] ml-0 xl:ml-6">
 
       {/* ── Editor panel ── */}
       <div className="flex-1 overflow-y-auto flex flex-col">
@@ -259,13 +305,6 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
           </h1>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Sync status */}
-            <SyncBadge
-              status={syncStatus}
-              providerLabel={provider.label}
-              onRetry={handleManualSave}
-            />
-
             {/* Reconnect button if not connected */}
             {syncStatus === 'not_connected' && (
               <button
@@ -276,8 +315,24 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
               </button>
             )}
 
+            {/* Send via Gmail if it is a proposal */}
+            {doc.name?.startsWith("Proposal") && (
+              <button
+                onClick={() => {
+                  const resolvedEmail = doc.lead && leadEmails ? leadEmails[doc.lead] || "" : "";
+                  setEmailTo(resolvedEmail);
+                  setEmailSubject(`Proposal: ${doc.name}`);
+                  setEmailBody(content);
+                  setIsSendModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-bold bg-neutral-900 hover:opacity-90 dark:bg-white text-white dark:text-neutral-900 px-3.5 py-1.5 rounded-full transition"
+              >
+                <Mail className="w-3.5 h-3.5" /> Send to Client
+              </button>
+            )}
+
             {/* Manual save */}
-            {provider.isConnected() && syncStatus !== 'saving' && syncStatus !== 'loading' && (
+            {provider.isConnected() && syncStatus !== 'saving' && syncStatus !== 'loading' && !isPdf && !isImage && (
               <button
                 onClick={handleManualSave}
                 className="inline-flex items-center gap-1.5 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-full transition"
@@ -307,12 +362,36 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
           </div>
         </div>
 
-        {/* Textarea */}
+        {/* Textarea or Preview */}
         <div className="flex-1 p-8">
-          {doc.url?.startsWith("data:image") ? (
-            <img src={doc.url} alt={doc.name} className="max-w-full rounded-xl shadow-sm" />
-          ) : doc.url?.startsWith("data:application/pdf") ? (
-            <embed src={doc.url} width="100%" height="700px" type="application/pdf" className="rounded-xl shadow-sm" />
+          {isImage ? (
+            <div className="flex items-center justify-center h-full min-h-[400px]">
+              {driveFileId ? (
+                <iframe
+                  src={`https://drive.google.com/file/d/${driveFileId}/preview`}
+                  width="100%"
+                  height="600px"
+                  className="rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm"
+                  allow="autoplay"
+                />
+              ) : (
+                <img src={doc.url} alt={doc.name} className="max-w-full max-h-[600px] rounded-xl shadow-sm object-contain" />
+              )}
+            </div>
+          ) : isPdf ? (
+            <div className="h-full min-h-[500px]">
+              {driveFileId ? (
+                <iframe
+                  src={`https://drive.google.com/file/d/${driveFileId}/preview`}
+                  width="100%"
+                  height="600px"
+                  className="rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm"
+                  allow="autoplay"
+                />
+              ) : (
+                <embed src={doc.url} width="100%" height="600px" type="application/pdf" className="rounded-xl shadow-sm" />
+              )}
+            </div>
           ) : syncStatus === 'loading' ? (
             <div className="flex items-center justify-center h-full min-h-[300px] text-neutral-400 text-sm gap-2">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading document from Google Drive…
@@ -328,79 +407,62 @@ export function DocumentEditor({ doc, onClose, onRemoteIdCreated, remoteFolderId
         </div>
       </div>
 
-      {/* ── History panel ── */}
-      <div className="w-full xl:w-[300px] bg-neutral-50 dark:bg-neutral-800/50 border-t xl:border-t-0 xl:border-l border-neutral-200 dark:border-neutral-800 p-6 flex flex-col shrink-0 min-h-[300px]">
-        <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-4">
-          Edit History
-        </h4>
-
-        <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-1 min-h-0">
-          {history.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white dark:bg-neutral-800 p-3 rounded-xl shadow-sm border border-neutral-200/60 dark:border-neutral-700/60"
-            >
-              <div className="flex justify-between items-start mb-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-sky-100 dark:bg-sky-900 flex items-center justify-center text-[10px] font-bold text-sky-700 dark:text-sky-300 shrink-0">
-                    {item.initials}
-                  </div>
-                  <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">
-                    {item.name}
-                  </span>
-                </div>
-                <span className="text-[10px] text-neutral-400 whitespace-nowrap ml-2">
-                  {item.time}
-                </span>
+      {isSendModalOpen && (
+        <Modal
+          isOpen={isSendModalOpen}
+          onClose={() => setIsSendModalOpen(false)}
+          title="Send Proposal via Gmail"
+          className="sm:max-w-2xl"
+        >
+          <div className="space-y-6 pt-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Recipient Email
+                </label>
+                <input
+                  type="email"
+                  className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow text-neutral-800 dark:text-neutral-200"
+                  placeholder="client@example.com"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                />
               </div>
-              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed pl-8">
-                {item.action}
-              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow text-neutral-800 dark:text-neutral-200"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 dark:text-neutral-500 mb-2">
+                  Message Body
+                </label>
+                <textarea
+                  className="w-full h-48 p-3 bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow text-neutral-800 dark:text-neutral-200 font-sans leading-relaxed"
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                />
+              </div>
+
+              <button
+                disabled={sendingEmail}
+                onClick={handleSendEmail}
+                className="w-full py-3 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-xl text-sm transition-transform active:scale-95 shadow-sm hover:shadow disabled:opacity-50"
+              >
+                {sendingEmail ? 'Sending...' : 'Send Proposal'}
+              </button>
             </div>
-          ))}
-        </div>
-
-        {/* Comment input */}
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
-          <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 p-2 rounded-xl focus-within:ring-2 focus-within:ring-sky-500/50">
-            <input
-              value={commentInput}
-              onChange={(e) => setCommentInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddComment(); }}
-              type="text"
-              placeholder="Add note…"
-              className="flex-1 bg-transparent text-sm px-2 py-1 outline-none dark:text-white"
-            />
-            <button
-              onClick={handleAddComment}
-              className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap"
-            >
-              Add
-            </button>
           </div>
-        </div>
-
-        {/* Future providers hint */}
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
-          <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider mb-2">Sync to</p>
-          <div className="flex flex-col gap-1.5">
-            {[
-              { label: 'Google Drive', connected: getProviderByType('google_drive').isConnected(), icon: '📄' },
-              { label: 'SharePoint', connected: false, icon: '🔷', soon: true },
-              { label: 'AWS S3', connected: false, icon: '🟠', soon: true },
-            ].map((p) => (
-              <div key={p.label} className="flex items-center gap-2 text-xs">
-                <span>{p.icon}</span>
-                <span className={p.connected ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-neutral-400'}>
-                  {p.label}
-                </span>
-                {p.connected && <CheckCircle2 className="w-3 h-3 text-emerald-500 ml-auto" />}
-                {p.soon && <span className="ml-auto text-[10px] bg-neutral-100 dark:bg-neutral-700 text-neutral-400 px-1.5 py-0.5 rounded-full">Soon</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        </Modal>
+      )}
     </div>
   );
 }
