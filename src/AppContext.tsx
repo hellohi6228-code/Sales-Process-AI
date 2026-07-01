@@ -106,6 +106,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [googleToken, setGoogleToken] = useState<string | null>(localStorage.getItem('google_provider_token'));
   const [notification, setNotification] = useState<Notification | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isStateLoadedFromSupabase, setIsStateLoadedFromSupabase] = useState(false);
 
   /** Surfaces any caught Drive/Google error as a user-visible banner instead of only console.error. */
   const reportGoogleError = (error: unknown, fallbackTitle = 'Google Drive error') => {
@@ -674,6 +675,288 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncDriveToState();
     }
   }, [googleToken]);
+
+  // --- Supabase State Synchronization Loader & Savers ---
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setIsStateLoadedFromSupabase(false);
+      return;
+    }
+
+    const loadState = async () => {
+      const userId = session.user.id;
+      try {
+        // 1. Load team members
+        const { data: teamData } = await supabase.from('team_members').select('*').eq('user_id', userId);
+        if (teamData && teamData.length > 0) {
+          setTeamMembers(teamData);
+        }
+
+        // 2. Load custom cards
+        const { data: cardsData } = await supabase.from('custom_cards').select('*').eq('user_id', userId);
+        if (cardsData) {
+          const procMap: Record<string, any[]> = {};
+          const leadMap: Record<string, any[]> = {};
+          cardsData.forEach(row => {
+            if (row.type === 'process') {
+              procMap[row.folder_name] = row.cards_json;
+            } else {
+              const leadKey = row.lead_name ? `${row.lead_name}-${row.folder_name}` : row.folder_name;
+              leadMap[leadKey] = row.cards_json;
+            }
+          });
+          if (Object.keys(procMap).length > 0) setCustomCardsProcess(procMap);
+          if (Object.keys(leadMap).length > 0) setCustomCardsLead(leadMap);
+        }
+
+        // 3. Load onboarding cards
+        const { data: onboardingData } = await supabase.from('onboarding_cards').select('*').eq('user_id', userId);
+        if (onboardingData) {
+          const onboardingMap: Record<string, any[]> = {};
+          onboardingData.forEach(row => {
+            onboardingMap[row.folder_name] = row.cards_json;
+          });
+          if (Object.keys(onboardingMap).length > 0) setOnboardingCards(onboardingMap);
+        }
+
+        // 4. Load folder access
+        const { data: accessData } = await supabase.from('folder_access').select('*').eq('user_id', userId);
+        if (accessData) {
+          const accessMap: Record<string, Record<string, string[]>> = { 'Process': {}, 'Lead': {} };
+          accessData.forEach(row => {
+            if (row.view_type === 'Process' || row.view_type === 'Lead') {
+              accessMap[row.view_type][row.folder_name] = row.member_emails;
+            }
+          });
+          setFolderAccess(accessMap);
+        }
+
+        // 5. Load process leads
+        const { data: leadsData } = await supabase.from('process_leads').select('*').eq('user_id', userId);
+        if (leadsData) {
+          const leadsMap: Record<string, string[]> = {};
+          leadsData.forEach(row => {
+            leadsMap[row.stage_name] = row.leads;
+          });
+          if (Object.keys(leadsMap).length > 0) setProcessLeads(leadsMap);
+        }
+
+        // 6. Load lead emails
+        const { data: emailsData } = await supabase.from('lead_emails').select('*').eq('user_id', userId);
+        if (emailsData) {
+          const emailsMap: Record<string, string> = {};
+          emailsData.forEach(row => {
+            emailsMap[row.lead_name] = row.email;
+          });
+          if (Object.keys(emailsMap).length > 0) setLeadEmails(emailsMap);
+        }
+
+        // 7. Load proposal threads
+        const { data: threadsData } = await supabase.from('proposal_threads').select('*').eq('user_id', userId);
+        if (threadsData) {
+          const threadsMap: Record<string, any[]> = {};
+          threadsData.forEach(row => {
+            threadsMap[row.lead_name] = [...(threadsMap[row.lead_name] || []), {
+              threadId: row.thread_id,
+              leadName: row.lead_name,
+              to: row.recipient,
+              subject: row.subject,
+              sentAt: row.sent_at
+            }];
+          });
+          if (Object.keys(threadsMap).length > 0) setProposalThreads(threadsMap);
+        }
+      } catch (err) {
+        console.error('Failed to load state from Supabase:', err);
+      } finally {
+        setIsStateLoadedFromSupabase(true);
+      }
+    };
+
+    loadState();
+  }, [session]);
+
+  // Saving: customCardsProcess & customCardsLead
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveCards = async () => {
+      try {
+        for (const [folderName, cards] of Object.entries(customCardsProcess)) {
+          await supabase.from('custom_cards').upsert({
+            user_id: userId,
+            type: 'process',
+            folder_name: folderName,
+            lead_name: null,
+            cards_json: cards,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,type,folder_name,lead_name' });
+        }
+
+        for (const [key, cards] of Object.entries(customCardsLead)) {
+          const idx = key.indexOf('-');
+          const leadName = idx !== -1 ? key.substring(0, idx) : null;
+          const folderName = idx !== -1 ? key.substring(idx + 1) : key;
+          await supabase.from('custom_cards').upsert({
+            user_id: userId,
+            type: 'lead',
+            folder_name: folderName,
+            lead_name: leadName,
+            cards_json: cards,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,type,folder_name,lead_name' });
+        }
+      } catch (err) {
+        console.error('Error saving custom cards to Supabase:', err);
+      }
+    };
+
+    saveCards();
+  }, [customCardsProcess, customCardsLead, isStateLoadedFromSupabase, session]);
+
+  // Saving: onboardingCards
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveOnboarding = async () => {
+      try {
+        for (const [folderName, cards] of Object.entries(onboardingCards)) {
+          await supabase.from('onboarding_cards').upsert({
+            user_id: userId,
+            folder_name: folderName,
+            cards_json: cards,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,folder_name' });
+        }
+      } catch (err) {
+        console.error('Error saving onboarding cards to Supabase:', err);
+      }
+    };
+    saveOnboarding();
+  }, [onboardingCards, isStateLoadedFromSupabase, session]);
+
+  // Saving: teamMembers
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveTeam = async () => {
+      try {
+        await supabase.from('team_members').delete().eq('user_id', userId);
+        if (teamMembers.length > 0) {
+          await supabase.from('team_members').insert(
+            teamMembers.map(m => ({
+              user_id: userId,
+              name: m.name,
+              email: m.email,
+              role: m.role || 'Collaborator',
+              avatar: m.avatar
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Error saving team members to Supabase:', err);
+      }
+    };
+    saveTeam();
+  }, [teamMembers, isStateLoadedFromSupabase, session]);
+
+  // Saving: folderAccess
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveFolderAccess = async () => {
+      try {
+        for (const [viewType, folders] of Object.entries(folderAccess)) {
+          for (const [folderName, members] of Object.entries(folders)) {
+            await supabase.from('folder_access').upsert({
+              user_id: userId,
+              view_type: viewType,
+              folder_name: folderName,
+              member_emails: members,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,view_type,folder_name' });
+          }
+        }
+      } catch (err) {
+        console.error('Error saving folder access to Supabase:', err);
+      }
+    };
+    saveFolderAccess();
+  }, [folderAccess, isStateLoadedFromSupabase, session]);
+
+  // Saving: processLeads
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveProcessLeads = async () => {
+      try {
+        for (const [stageName, leads] of Object.entries(processLeads)) {
+          await supabase.from('process_leads').upsert({
+            user_id: userId,
+            stage_name: stageName,
+            leads: leads,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,stage_name' });
+        }
+      } catch (err) {
+        console.error('Error saving process leads to Supabase:', err);
+      }
+    };
+    saveProcessLeads();
+  }, [processLeads, isStateLoadedFromSupabase, session]);
+
+  // Saving: leadEmails
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveLeadEmails = async () => {
+      try {
+        for (const [leadName, email] of Object.entries(leadEmails)) {
+          await supabase.from('lead_emails').upsert({
+            user_id: userId,
+            lead_name: leadName,
+            email: email,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id,lead_name' });
+        }
+      } catch (err) {
+        console.error('Error saving lead emails to Supabase:', err);
+      }
+    };
+    saveLeadEmails();
+  }, [leadEmails, isStateLoadedFromSupabase, session]);
+
+  // Saving: proposalThreads
+  useEffect(() => {
+    if (!isStateLoadedFromSupabase || !session?.user?.id) return;
+    const userId = session.user.id;
+
+    const saveProposalThreads = async () => {
+      try {
+        for (const [leadName, threads] of Object.entries(proposalThreads)) {
+          for (const t of threads) {
+            await supabase.from('proposal_threads').upsert({
+              user_id: userId,
+              lead_name: leadName,
+              thread_id: t.threadId,
+              recipient: t.to,
+              subject: t.subject,
+              sent_at: t.sentAt || new Date().toISOString()
+            }, { onConflict: 'user_id,thread_id' });
+          }
+        }
+      } catch (err) {
+        console.error('Error saving proposal threads to Supabase:', err);
+      }
+    };
+    saveProposalThreads();
+  }, [proposalThreads, isStateLoadedFromSupabase, session]);
 
   useEffect(() => {
     if (googleToken) {
