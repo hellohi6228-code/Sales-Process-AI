@@ -422,15 +422,25 @@ export async function listFilesInFolderRecursive(folderId: string): Promise<Arra
 export async function listSharedFolders(): Promise<Array<{ id: string; name: string }>> {
   try {
     const token = await ensureValidGoogleToken();
-    // 1. Get folders shared with me directly that match our application ID tag
-    const query = `mimeType='application/vnd.google-apps.folder' and sharedWithMe=true and trashed=false and description='SalesProcessAI Folder'`;
+    // 1. Get folders shared with me directly
+    const query = `mimeType='application/vnd.google-apps.folder' and sharedWithMe=true and trashed=false`;
     const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=100`,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,description)&pageSize=100`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     await checkDriveResponse(res, 'listing shared folders');
     const data = await res.json();
-    const directFolders = data.files || [];
+    const files = data.files || [];
+
+    const initialProcessFolders = [
+      'Positioning', 'Audience', 'Qualifying', 'Discovery', 'Solution design',
+      'Business case', 'Proposal', 'Closing', 'Objection handling', 'Onboarding', 'Referral'
+    ];
+    const appFolderNames = ['PROCESS', 'LEAD', ...initialProcessFolders];
+
+    const directFolders = files.filter((f: any) => {
+      return appFolderNames.includes(f.name) || f.description === 'SalesProcessAI Folder';
+    });
     
     const allFolders: Array<{ id: string; name: string }> = [...directFolders];
     
@@ -438,15 +448,18 @@ export async function listSharedFolders(): Promise<Array<{ id: string; name: str
     for (const folder of directFolders) {
       if (folder.name === 'PROCESS' || folder.name === 'LEAD') {
         try {
-          const subquery = `mimeType='application/vnd.google-apps.folder' and '${folder.id}' in parents and trashed=false and description='SalesProcessAI Folder'`;
+          const subquery = `mimeType='application/vnd.google-apps.folder' and '${folder.id}' in parents and trashed=false`;
           const subres = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subquery)}&fields=files(id,name)&pageSize=100`,
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subquery)}&fields=files(id,name,description)&pageSize=100`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (subres.ok) {
             const subdata = await subres.json();
             if (subdata.files) {
-              allFolders.push(...subdata.files);
+              const validSubs = subdata.files.filter((sf: any) => 
+                initialProcessFolders.includes(sf.name) || sf.description === 'SalesProcessAI Folder'
+              );
+              allFolders.push(...validSubs);
             }
           }
         } catch (e) {

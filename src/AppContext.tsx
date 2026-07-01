@@ -600,6 +600,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                         const discoveryInputContextId = await findOrCreateFolder("Input Context", discoveryFolderId);
                         await createGoogleDocFromText(docName, synthText, discoveryInputContextId);
                       }
+
+                      const closingFolderId = await syncProcessLeadFolder("Closing", lead);
+                      if (closingFolderId) {
+                        const closingInputContextId = await findOrCreateFolder("Input Context", closingFolderId);
+                        await createGoogleDocFromText(docName, synthText, closingInputContextId);
+                      }
+
+                      const objectionFolderId = await syncProcessLeadFolder("Objection handling", lead);
+                      if (objectionFolderId) {
+                        const objectionInputContextId = await findOrCreateFolder("Input Context", objectionFolderId);
+                        await createGoogleDocFromText(docName, synthText, objectionInputContextId);
+                      }
                       console.log(`[Drive Sync] Automatically updated Input Context files for lead: ${lead}`);
                     }
                   } catch (err) {

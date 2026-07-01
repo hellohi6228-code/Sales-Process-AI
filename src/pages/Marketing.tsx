@@ -757,7 +757,7 @@ export function Marketing() {
                                         key={subIdx}
                                         onClick={() => {
                                           setEditingDoc(subDoc);
-                                          setIsContextExpanded(false);
+                                          setIsContextExpanded(true);
                                           setIsLeadsExpanded(false);
                                         }}
                                         className="w-full text-left text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-between"
@@ -783,7 +783,7 @@ export function Marketing() {
                               <button
                                 onClick={() => {
                                   setEditingDoc(doc);
-                                  setIsContextExpanded(false);
+                                  setIsContextExpanded(true);
                                   setIsLeadsExpanded(false);
                                 }}
                                 className="w-full text-left text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-between"
